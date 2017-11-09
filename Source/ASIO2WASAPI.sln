@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ASIO2WASAPI", "Driver\ASIO2WASAPI.vcxproj", "{6653AA2B-E18E-4656-A1C9-E8377D54F897}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Install", "Install\Install.vcxproj", "{718DECA8-1174-42E6-8631-1454EFECC71B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Uninstall", "Uninstall\Uninstall.vcxproj", "{26A226F6-DFA2-4C8B-870B-561694684EE7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Debug|Win32.ActiveCfg = Debug|Win32
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Debug|Win32.Build.0 = Debug|Win32
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Debug|x64.ActiveCfg = Debug|x64
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Debug|x64.Build.0 = Debug|x64
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Release|Win32.ActiveCfg = Release|Win32
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Release|Win32.Build.0 = Release|Win32
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Release|x64.ActiveCfg = Release|x64
+		{6653AA2B-E18E-4656-A1C9-E8377D54F897}.Release|x64.Build.0 = Release|x64
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Debug|Win32.Build.0 = Debug|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Debug|x64.ActiveCfg = Debug|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Debug|x64.Build.0 = Debug|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Release|Win32.ActiveCfg = Release|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Release|Win32.Build.0 = Release|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Release|x64.ActiveCfg = Release|Win32
+		{718DECA8-1174-42E6-8631-1454EFECC71B}.Release|x64.Build.0 = Release|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Debug|Win32.ActiveCfg = Debug|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Debug|Win32.Build.0 = Debug|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Debug|x64.ActiveCfg = Debug|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Debug|x64.Build.0 = Debug|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Release|Win32.ActiveCfg = Release|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Release|Win32.Build.0 = Release|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Release|x64.ActiveCfg = Release|Win32
+		{26A226F6-DFA2-4C8B-870B-561694684EE7}.Release|x64.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
