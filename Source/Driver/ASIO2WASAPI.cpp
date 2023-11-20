@@ -111,7 +111,77 @@ inline vector<wchar_t> getDeviceId(IMMDevice * pDevice)
     return id;
 }
 
-IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat)
+BOOL IsFormatSupported (IMMDevice* pDevice, WORD nChannels, DWORD nSampleRate, AUDCLNT_SHAREMODE shareMode)
+{
+    if (!pDevice)
+        return NULL;
+
+    IAudioClient* pAudioClient = NULL;
+    HRESULT hr = pDevice->Activate(
+        IID_IAudioClient, CLSCTX_ALL,
+        NULL, (void**)&pAudioClient);
+    if (FAILED(hr) || !pAudioClient)
+        return NULL;
+    CReleaser r(pAudioClient);
+
+    // create a reasonable channel mask
+    DWORD dwChannelMask = 0;
+    DWORD bit = 1;
+    for (int i = 0; i < nChannels; i++)
+    {
+        dwChannelMask |= bit;
+        bit <<= 1;
+    }
+
+    WAVEFORMATEXTENSIBLE waveFormat;
+    //try 32-bit first
+    waveFormat.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    waveFormat.Format.nChannels = nChannels;
+    waveFormat.Format.nSamplesPerSec = nSampleRate;
+    waveFormat.Format.wBitsPerSample = 32;
+    waveFormat.Format.nBlockAlign = waveFormat.Format.wBitsPerSample * waveFormat.Format.nChannels / 8;
+    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
+    waveFormat.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+    waveFormat.Samples.wValidBitsPerSample = waveFormat.Format.wBitsPerSample;
+    waveFormat.dwChannelMask = dwChannelMask;
+    waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;   
+
+    hr = pAudioClient->IsFormatSupported(shareMode, (WAVEFORMATEX*)&waveFormat, NULL);
+    if (hr == S_OK)
+        return TRUE;
+
+    //try 24-bit containered next
+    waveFormat.Samples.wValidBitsPerSample = 24;
+
+    hr = pAudioClient->IsFormatSupported(shareMode, (WAVEFORMATEX*)&waveFormat, NULL);
+    if (hr == S_OK)
+        return TRUE;
+
+    //try 24-bit packed next
+    waveFormat.Format.wBitsPerSample = 24;
+    waveFormat.Format.nBlockAlign = waveFormat.Format.wBitsPerSample * waveFormat.Format.nChannels / 8;
+    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
+    waveFormat.Samples.wValidBitsPerSample = waveFormat.Format.wBitsPerSample;
+
+    hr = pAudioClient->IsFormatSupported(shareMode, (WAVEFORMATEX*)&waveFormat, NULL);
+    if (hr == S_OK)
+        return TRUE;
+
+    //finally, try 16-bit   
+    waveFormat.Format.wBitsPerSample = 16;
+    waveFormat.Format.nBlockAlign = waveFormat.Format.wBitsPerSample * waveFormat.Format.nChannels / 8;
+    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
+    waveFormat.Samples.wValidBitsPerSample = waveFormat.Format.wBitsPerSample;
+
+    hr = pAudioClient->IsFormatSupported(shareMode, (WAVEFORMATEX*)&waveFormat, NULL);
+    if (hr == S_OK)
+        return TRUE;
+
+    return FALSE;  
+
+}
+
+IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, int bufferSize)
 {
     if (!pDevice || !pWaveFormat)
         return NULL;
@@ -125,8 +195,9 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat)
     CReleaser r(pAudioClient);
 
     hr=pAudioClient->IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE,pWaveFormat,NULL);
-    if (FAILED(hr))
+    if (hr == AUDCLNT_E_UNSUPPORTED_FORMAT) 
         return NULL;
+    
    
     //calculate buffer size and duration
     REFERENCE_TIME hnsDefaultDuration = 0;
@@ -134,7 +205,7 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat)
     if (FAILED(hr))
         return NULL;
 
-    hnsDefaultDuration = max(hnsDefaultDuration, 1000000); //100ms minimum
+    hnsDefaultDuration = max(hnsDefaultDuration, bufferSize * 10000); 
 
     hr = pAudioClient->Initialize(
                          AUDCLNT_SHAREMODE_EXCLUSIVE,
@@ -143,7 +214,7 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat)
                          hnsDefaultDuration,
                          pWaveFormat,
                          NULL);
-    
+        
     if (hr ==  AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED)
     {
         UINT bufferSize = 0;
@@ -173,7 +244,7 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat)
     return pAudioClient;
 }
 
-BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, WAVEFORMATEXTENSIBLE * pwfxt = NULL, IAudioClient * * ppAudioClient = NULL)
+BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int nbufferSize, WAVEFORMATEXTENSIBLE * pwfxt = NULL, IAudioClient * * ppAudioClient = NULL)
 {
     if (!pDevice)
          return FALSE;
@@ -192,7 +263,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, WAVEFO
    WAVEFORMATEXTENSIBLE waveFormat;
     //try 32-bit first
    waveFormat.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-   waveFormat.Format.nChannels =nChannels;
+   waveFormat.Format.nChannels = nChannels;
    waveFormat.Format.nSamplesPerSec = nSampleRate;
    waveFormat.Format.wBitsPerSample = 32;
    waveFormat.Format.nBlockAlign = waveFormat.Format.wBitsPerSample * waveFormat.Format.nChannels/8;
@@ -202,26 +273,26 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, WAVEFO
    waveFormat.dwChannelMask = dwChannelMask;
    waveFormat.SubFormat =   KSDATAFORMAT_SUBTYPE_PCM;
 
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat);
+   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize);
    
    if (pAudioClient)
        goto Finish;
 
    //try 24-bit containered next
-   waveFormat.Samples.wValidBitsPerSample = 24;
+    waveFormat.Samples.wValidBitsPerSample = 24;
 
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat);
+   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize);
 
    if (pAudioClient)
-       goto Finish;
-
+       goto Finish; 
+   
    //try 24-bit packed next
    waveFormat.Format.wBitsPerSample = 24;
    waveFormat.Format.nBlockAlign = waveFormat.Format.wBitsPerSample * waveFormat.Format.nChannels/8;
    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
    waveFormat.Samples.wValidBitsPerSample=waveFormat.Format.wBitsPerSample;
 
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat);
+   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize);
 
    if (pAudioClient)
        goto Finish;
@@ -232,7 +303,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, WAVEFO
    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
    waveFormat.Samples.wValidBitsPerSample=waveFormat.Format.wBitsPerSample;
    
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat);
+   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize);
 
 Finish:
    BOOL bSuccess = (pAudioClient!=NULL);
@@ -272,7 +343,7 @@ ASIOSampleType ASIO2WASAPI::getASIOSampleType() const
             switch (m_waveFormat.Samples.wValidBitsPerSample)
             {
                 case 32: return ASIOSTInt32LSB;
-                case 24: return ASIOSTInt32LSB24;
+                case 24: return ASIOSTInt32LSB; //falco: In case of 24-bit data Windows simply chops the last 8 bits. No special alignment needed. ASIOSTInt32LSB24 is simply wrong. 
                 default: return ASIOSTLastEntry ;
             }
         default: return ASIOSTLastEntry;
@@ -281,6 +352,7 @@ ASIOSampleType ASIO2WASAPI::getASIOSampleType() const
 
 const char * szChannelRegValName = "Channels";
 const char * szSampRateRegValName = "Sample Rate";
+const char * szBufferSizeRegValName = "Buffer Size";
 const wchar_t * szDeviceId = L"Device Id";
 
 void ASIO2WASAPI::readFromRegistry()
@@ -293,6 +365,9 @@ void ASIO2WASAPI::readFromRegistry()
         RegGetValue(key,NULL,szChannelRegValName,RRF_RT_REG_DWORD,NULL,&m_nChannels,&size);
         size = sizeof (m_nSampleRate);
         RegGetValue(key,NULL,szSampRateRegValName,RRF_RT_REG_DWORD,NULL,&m_nSampleRate,&size);
+        size = sizeof(m_nBufferSize);
+        RegGetValue(key, NULL, szBufferSizeRegValName, RRF_RT_REG_DWORD, NULL, &m_nBufferSize, &size);
+        
         RegGetValueW(key,NULL,szDeviceId,RRF_RT_REG_SZ,NULL,NULL,&size);
         m_deviceId.resize(size/sizeof(m_deviceId[0]));
         if (size)
@@ -311,6 +386,8 @@ void ASIO2WASAPI::writeToRegistry()
         RegSetValueEx (key,szChannelRegValName,NULL,REG_DWORD,(const BYTE *)&m_nChannels,size);
         size = sizeof (m_nSampleRate);
         RegSetValueEx(key,szSampRateRegValName,NULL,REG_DWORD,(const BYTE *)&m_nSampleRate,size);
+        size = sizeof(m_nBufferSize);
+        RegSetValueEx(key, szBufferSizeRegValName, NULL, REG_DWORD, (const BYTE*)&m_nBufferSize, size);
         size = (DWORD)(m_deviceId.size()) * sizeof(m_deviceId[0]);
         RegSetValueExW(key,szDeviceId,NULL,REG_SZ,(const BYTE *)&m_deviceId[0],size);
         RegCloseKey(key);
@@ -322,6 +399,8 @@ void ASIO2WASAPI::clearState()
     //fields valid before initialization
     m_nChannels = 2;
     m_nSampleRate = 48000;
+    m_nBufferSize = 20;
+
     memset(m_errorMessage,0,sizeof(m_errorMessage));
     m_deviceId.clear();
     m_hStopPlayThreadEvent = NULL; 
@@ -388,6 +467,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     {
                         int nChannels = 2;
                         int nSampleRate = 48000;
+                        int nBufferSize = 20;
                         //get nChannels and nSampleRate from the dialog
                         {
                             BOOL bSuccess = FALSE;
@@ -398,6 +478,16 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                                 MessageBox(hwndDlg,"Invalid number of channels",szDescription,MB_OK);
                                 return 0;                        
                             }
+
+                            tmp = (int)GetDlgItemInt(hwndDlg, IDC_BUFFERSIZE, &bSuccess, TRUE);
+                            if (bSuccess && tmp >= 0)
+                                nBufferSize = tmp;
+                            else {
+                                MessageBox(hwndDlg, "Invalid buffer size", szDescription, MB_OK);
+                                return 0;
+                            }
+
+
                             tmp = (int)GetDlgItemInt(hwndDlg,IDC_SAMPLE_RATE,&bSuccess,TRUE);
                             if (bSuccess && tmp >= 0)
                                 nSampleRate = tmp;
@@ -480,16 +570,17 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                         pDriver->shutdown();
 
                         //make sure the device supports this combination of nChannels and nSampleRate
-                        BOOL rc = FindStreamFormat(pDevice,nChannels,nSampleRate);
+                        BOOL rc = FindStreamFormat(pDevice,nChannels, nSampleRate, nBufferSize);
                         if (!rc)
                         {
-                            MessageBox(hwndDlg,"Sample rate is not supported in WASAPI exclusive mode",szDescription,MB_OK);
+                            MessageBox(hwndDlg,"Format is not supported in WASAPI exclusive mode.",szDescription,MB_OK | MB_ICONWARNING);
                             return 0;
                         }
                         
                         //copy selected device/sample rate/channel combination into the driver
                         pDriver->m_nSampleRate = nSampleRate;
                         pDriver->m_nChannels = nChannels;
+                        pDriver->m_nBufferSize = nBufferSize;
                         pDriver->m_deviceId.resize(selectedDeviceId.size());
                         wcscpy_s(&pDriver->m_deviceId[0],selectedDeviceId.size(),&selectedDeviceId.at(0));
                         //try to init the driver
@@ -515,6 +606,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                 return FALSE;
             SetDlgItemInt(hwndDlg,IDC_CHANNELS,(UINT)pDriver->m_nChannels,TRUE);
             SetDlgItemInt(hwndDlg,IDC_SAMPLE_RATE,(UINT)pDriver->m_nSampleRate,TRUE);
+            SetDlgItemInt(hwndDlg, IDC_BUFFERSIZE, (UINT)pDriver->m_nBufferSize, TRUE);
 
             IMMDeviceEnumerator *pEnumerator = NULL;
             DWORD flags = 0;
@@ -699,7 +791,9 @@ HRESULT ASIO2WASAPI::LoadData(IAudioRenderClient * pRenderClient)
         for (unsigned j = 0; j < buffer.size(); j++) 
         {
             if (buffer[j].size() >= nextSampleOffset)
-                memcpy_s(pData,sampleSize,&buffer[j].at(0)+sampleOffset,sampleSize);
+            {
+                memcpy_s(pData, sampleSize, &buffer[j].at(0) + sampleOffset, sampleSize);               
+            }
             else
                 memset(pData,0,sampleSize);
             pData+=sampleSize;
@@ -764,6 +858,8 @@ void ASIO2WASAPI::setMostReliableFormat()
 {
     m_nChannels = 2;
     m_nSampleRate = 48000;
+    m_nBufferSize = 20;
+
     memset(&m_waveFormat,0,sizeof(m_waveFormat));
     WAVEFORMATEX& fmt = m_waveFormat.Format;
     fmt.wFormatTag = WAVE_FORMAT_PCM;
@@ -836,7 +932,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     
     m_deviceId = getDeviceId(m_pDevice);
 
-    BOOL rc = FindStreamFormat(m_pDevice, m_nChannels,m_nSampleRate,&m_waveFormat,&m_pAudioClient);
+    BOOL rc = FindStreamFormat(m_pDevice, m_nChannels,m_nSampleRate, m_nBufferSize ,&m_waveFormat,&m_pAudioClient);
     if (!rc)
     {//go through all devices and try to find the one that works for 16/48K
         SAFE_RELEASE(m_pDevice)
@@ -860,7 +956,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
             if (FAILED(hr)) 
                 continue;
             CReleaser r(pMMDevice);
-            rc = FindStreamFormat(pMMDevice, m_nChannels,m_nSampleRate,&m_waveFormat,&m_pAudioClient);
+            rc = FindStreamFormat(pMMDevice, m_nChannels,m_nSampleRate, m_nBufferSize, &m_waveFormat,&m_pAudioClient);
             if (rc)
             {
                 m_pDevice = pMMDevice;
@@ -1034,7 +1130,7 @@ ASIOError ASIO2WASAPI::canSampleRate (ASIOSampleRate sampleRate)
         return ASE_NotPresent;
 
 	int nSampleRate = static_cast<int>(sampleRate);
-    return (FindStreamFormat(m_pDevice,m_nChannels,nSampleRate) == S_OK)? ASE_OK : ASE_NoClock;
+    return IsFormatSupported(m_pDevice, m_nChannels, nSampleRate, AUDCLNT_SHAREMODE_EXCLUSIVE) ? ASE_OK : ASE_NoClock;
 }
 
 ASIOError ASIO2WASAPI::start()

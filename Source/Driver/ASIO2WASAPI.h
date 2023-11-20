@@ -105,6 +105,7 @@ private:
     //fields valid before initialization
     int m_nChannels;
     int m_nSampleRate;
+    int m_nBufferSize;
     char m_errorMessage[128];
     vector<wchar_t> m_deviceId;
     
