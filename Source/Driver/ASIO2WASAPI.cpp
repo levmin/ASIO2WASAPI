@@ -462,7 +462,80 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             {
             switch (LOWORD(wParam)) 
             { 
-                case IDOK: 
+            case IDC_DEVICE:
+            {
+                if (HIWORD(wParam) == CBN_SELCHANGE)
+                {
+                    SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_RESETCONTENT, 0, 0);
+
+                    //get the selected device's index from the dialog
+                    LRESULT lr = SendDlgItemMessage(hwndDlg, IDC_DEVICE, CB_GETCURSEL, 0, 0);
+
+                    vector<wchar_t>& selectedDeviceId = deviceStringIds[lr];
+                    //find this device
+                    IMMDevice* pDevice = NULL;
+                    {
+                        IMMDeviceEnumerator* pEnumerator = NULL;
+                        HRESULT hr = CoCreateInstance(
+                            CLSID_MMDeviceEnumerator, NULL,
+                            CLSCTX_ALL, IID_IMMDeviceEnumerator,
+                            (void**)&pEnumerator);
+                        if (FAILED(hr))
+                            return 0;
+                        CReleaser r1(pEnumerator);
+
+                        IMMDeviceCollection* pMMDeviceCollection = NULL;
+                        hr = pEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pMMDeviceCollection);
+                        if (FAILED(hr))
+                            return 0;
+                        CReleaser r2(pMMDeviceCollection);
+
+                        UINT nDevices = 0;
+                        hr = pMMDeviceCollection->GetCount(&nDevices);
+                        if (FAILED(hr))
+                            return 0;
+
+                        for (UINT i = 0; i < nDevices; i++)
+                        {
+                            IMMDevice* pMMDevice = NULL;
+                            hr = pMMDeviceCollection->Item(i, &pMMDevice);
+                            if (FAILED(hr))
+                                continue;
+                            CReleaser r(pMMDevice);
+                            vector<wchar_t> deviceId = getDeviceId(pMMDevice);
+                            if (deviceId.size() == 0)
+                                continue;
+                            if (wcscmp(&deviceId[0], &selectedDeviceId[0]) == 0)
+                            {
+                                pDevice = pMMDevice;
+                                r.deactivate();
+                                break;
+                            }
+                        }
+                    }
+                    if (!pDevice)
+                    {
+                        MessageBox(hwndDlg, "Invalid audio device", szDescription, MB_OK);
+                        return 0;
+                    }
+
+                    wchar_t tmpBuff[8] = { 0 };
+                    for (UINT i = 2; i < 40; i = i + 2)
+                    {
+                        if (IsFormatSupported(pDevice, i, pDriver->m_nSampleRate, AUDCLNT_SHAREMODE_EXCLUSIVE))
+                        {
+                            SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_ADDSTRING, 0, (LPARAM)_itow(i, tmpBuff, 10));
+                        }
+
+                    }
+
+                    SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, 0, 0);
+                    CReleaser r2(pDevice);
+
+                }
+                break;
+            }
+            case IDOK: 
                     if (pDriver)
                     {
                         int nChannels = 2;
@@ -601,11 +674,37 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             break;
         case WM_INITDIALOG: 
             {
-            pDriver = (ASIO2WASAPI*) lParam;
+            pDriver = (ASIO2WASAPI*)lParam;
             if (!pDriver)
                 return FALSE;
-            SetDlgItemInt(hwndDlg,IDC_CHANNELS,(UINT)pDriver->m_nChannels,TRUE);
-            SetDlgItemInt(hwndDlg,IDC_SAMPLE_RATE,(UINT)pDriver->m_nSampleRate,TRUE);
+
+            HWND hwndOwner = 0;
+            RECT rcOwner, rcDlg, rc;
+
+            if ((hwndOwner = GetParent(hwndDlg)) == NULL)
+            {
+                hwndOwner = GetDesktopWindow();
+            }
+
+            GetWindowRect(hwndOwner, &rcOwner);
+            GetWindowRect(hwndDlg, &rcDlg);
+            CopyRect(&rc, &rcOwner);
+
+            OffsetRect(&rcDlg, -rcDlg.left, -rcDlg.top);
+            OffsetRect(&rc, -rc.left, -rc.top);
+            OffsetRect(&rc, -rcDlg.right, -rcDlg.bottom);
+
+            SetWindowPos(hwndDlg,
+                HWND_TOPMOST,
+                rcOwner.left + (rc.right / 2),
+                rcOwner.top + (rc.bottom / 2),
+                0, 0,
+                SWP_NOSIZE);
+
+            if (GetDlgCtrlID((HWND)wParam) != IDC_DEVICE) SetFocus(GetDlgItem(hwndDlg, IDC_DEVICE));
+
+            //SetDlgItemInt(hwndDlg,IDC_CHANNELS,(UINT)pDriver->m_nChannels,TRUE);
+            SetDlgItemInt(hwndDlg, IDC_SAMPLE_RATE, (UINT)pDriver->m_nSampleRate, TRUE);
             SetDlgItemInt(hwndDlg, IDC_BUFFERSIZE, (UINT)pDriver->m_nBufferSize, TRUE);
 
             IMMDeviceEnumerator *pEnumerator = NULL;
@@ -677,6 +776,20 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     }
                 }
             SendDlgItemMessage(hwndDlg,IDC_DEVICE,CB_SETCURSEL,nDeviceIdIndex,0);
+
+            wchar_t tmpBuff[8] = { 0 };
+            for (UINT i = 2; i < 40; i = i + 2)
+            {
+                if (IsFormatSupported(pDriver->m_pDevice, i, pDriver->m_nSampleRate, AUDCLNT_SHAREMODE_EXCLUSIVE))
+                {
+                    SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_ADDSTRING, 0, (LPARAM)_itow(i, tmpBuff, 10));
+                }
+
+            }
+
+            nDeviceIdIndex = SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_FINDSTRING, -1, (LPARAM)_itow(pDriver->m_nChannels, tmpBuff, 10));
+            SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, nDeviceIdIndex, 0);
+
             return TRUE;
             }
             break;
