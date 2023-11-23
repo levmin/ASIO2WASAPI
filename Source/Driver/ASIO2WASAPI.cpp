@@ -452,6 +452,9 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 { 
     static ASIO2WASAPI * pDriver = NULL;
     static vector< vector<wchar_t> > deviceStringIds;
+    static const wchar_t* const sampleRates[6] = { L"22050", L"32000", L"44100", L"48000", L"96000", L"192000"};
+    static int sampleRatesLength = sizeof(sampleRates) / sizeof(sampleRates[0]);
+    
     switch (message) 
     { 
          case WM_DESTROY:
@@ -467,6 +470,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                 if (HIWORD(wParam) == CBN_SELCHANGE)
                 {
                     SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_RESETCONTENT, 0, 0);
+                    SendDlgItemMessage(hwndDlg, IDC_SAMPLE_RATE, CB_RESETCONTENT, 0, 0);
 
                     //get the selected device's index from the dialog
                     LRESULT lr = SendDlgItemMessage(hwndDlg, IDC_DEVICE, CB_GETCURSEL, 0, 0);
@@ -528,8 +532,27 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                         }
 
                     }
+                    int nItemIdIndex = SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_FINDSTRING, -1, (LPARAM)_itow(pDriver->m_nChannels, tmpBuff, 10));
+                    if (nItemIdIndex > 0)
+                        SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, nItemIdIndex, 0);
+                    else
+                        SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, 0, 0);
 
-                    SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, 0, 0);
+                    for (UINT i = 0; i < sampleRatesLength; i++)
+                    {
+                        if (IsFormatSupported(pDevice, pDriver->m_nChannels, _wtoi(sampleRates[i]), AUDCLNT_SHAREMODE_EXCLUSIVE))
+                        {
+                            SendDlgItemMessageW(hwndDlg, IDC_SAMPLE_RATE, CB_ADDSTRING, 0, (LPARAM)sampleRates[i]);
+                        }
+
+                    }
+                    nItemIdIndex = SendDlgItemMessageW(hwndDlg, IDC_SAMPLE_RATE, CB_FINDSTRING, -1, (LPARAM)_itow(pDriver->m_nSampleRate, tmpBuff, 10));
+                    if (nItemIdIndex > 0)
+                        SendDlgItemMessage(hwndDlg, IDC_SAMPLE_RATE, CB_SETCURSEL, nItemIdIndex, 0);
+                    else
+                        SendDlgItemMessage(hwndDlg, IDC_SAMPLE_RATE, CB_SETCURSEL, 0, 0);
+
+                    
                     CReleaser r2(pDevice);
 
                 }
@@ -704,7 +727,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             if (GetDlgCtrlID((HWND)wParam) != IDC_DEVICE) SetFocus(GetDlgItem(hwndDlg, IDC_DEVICE));
 
             //SetDlgItemInt(hwndDlg,IDC_CHANNELS,(UINT)pDriver->m_nChannels,TRUE);
-            SetDlgItemInt(hwndDlg, IDC_SAMPLE_RATE, (UINT)pDriver->m_nSampleRate, TRUE);
+            //SetDlgItemInt(hwndDlg, IDC_SAMPLE_RATE, (UINT)pDriver->m_nSampleRate, TRUE);
             SetDlgItemInt(hwndDlg, IDC_BUFFERSIZE, (UINT)pDriver->m_nBufferSize, TRUE);
 
             IMMDeviceEnumerator *pEnumerator = NULL;
@@ -765,17 +788,17 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             deviceStringIds = deviceIds;
 
             //find current device id
-            int nDeviceIdIndex = -1;
+            int nItemIdIndex = -1;
             if (pDriver->m_deviceId.size())
                 for (unsigned i=0;i<deviceStringIds.size(); i++)
                 {
                     if (wcscmp(&deviceStringIds[i].at(0),&pDriver->m_deviceId[0]) == 0)
                     {    
-                        nDeviceIdIndex = i;
+                        nItemIdIndex = i;
                         break;
                     }
                 }
-            SendDlgItemMessage(hwndDlg,IDC_DEVICE,CB_SETCURSEL,nDeviceIdIndex,0);
+            SendDlgItemMessage(hwndDlg,IDC_DEVICE,CB_SETCURSEL,nItemIdIndex,0);
 
             wchar_t tmpBuff[8] = { 0 };
             for (UINT i = 2; i < 40; i = i + 2)
@@ -787,8 +810,25 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 
             }
 
-            nDeviceIdIndex = SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_FINDSTRING, -1, (LPARAM)_itow(pDriver->m_nChannels, tmpBuff, 10));
-            SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, nDeviceIdIndex, 0);
+            nItemIdIndex = SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_FINDSTRING, -1, (LPARAM)_itow(pDriver->m_nChannels, tmpBuff, 10));
+            if (nItemIdIndex > 0)
+                SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, nItemIdIndex, 0);
+            else
+                SendDlgItemMessage(hwndDlg, IDC_CHANNELS, CB_SETCURSEL, 0, 0);
+
+            for (UINT i = 0; i < sampleRatesLength; i++)
+            {
+                if (IsFormatSupported(pDriver->m_pDevice, pDriver->m_nChannels, _wtoi(sampleRates[i]), AUDCLNT_SHAREMODE_EXCLUSIVE))
+                {
+                    SendDlgItemMessageW(hwndDlg, IDC_SAMPLE_RATE, CB_ADDSTRING, 0, (LPARAM)sampleRates[i]);
+                }
+
+            } 
+            nItemIdIndex = SendDlgItemMessageW(hwndDlg, IDC_SAMPLE_RATE, CB_FINDSTRING, -1, (LPARAM)_itow(pDriver->m_nSampleRate, tmpBuff, 10));
+            if (nItemIdIndex > 0)
+                SendDlgItemMessage(hwndDlg, IDC_SAMPLE_RATE, CB_SETCURSEL, nItemIdIndex, 0);
+            else
+                SendDlgItemMessage(hwndDlg, IDC_SAMPLE_RATE, CB_SETCURSEL, 0, 0);
 
             return TRUE;
             }
