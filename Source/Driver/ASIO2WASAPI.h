@@ -29,12 +29,18 @@ struct IMMDevice;
 struct IAudioClient;
 struct IAudioRenderClient;
 
+#define SAFE_RELEASE(punk)  \
+              if ((punk) != NULL)  \
+                { (punk)->Release(); (punk) = NULL; }
+
 #include "COMBaseClasses.h"
 #include "asiosys.h"
 #include "iasiodrv.h"
 
 extern CLSID CLSID_ASIO2WASAPI_DRIVER;
 const char * const szDescription = "ASIO2WASAPI";
+
+static bool UseDefaultDevice = false;
 
 
 class ASIO2WASAPI : public IASIO, public CUnknown
@@ -58,11 +64,15 @@ public:
 	// IUnknown
 	virtual HRESULT STDMETHODCALLTYPE NonDelegatingQueryInterface(REFIID riid,void **ppvObject);
 
+    
+
 	ASIOBool init (void* sysRef);
 	void getDriverName (char *name);	// max 32 bytes incl. terminating zero
 	long getDriverVersion ();
 	void getErrorMessage (char *string);	// max 128 bytes incl. terminating zero
 
+    ASIOCallbacks* getCallbacks() { return m_callbacks; }
+      
 	ASIOError start ();
 	ASIOError stop ();
 
@@ -94,11 +104,11 @@ private:
          UINT message, WPARAM wParam, LPARAM lParam);
     HRESULT LoadData(IAudioRenderClient * pRenderClient);
     long refTimeToBufferSize(LONGLONG time) const;
-    LONGLONG bufferSizeToRefTime(long bufferSize) const;
-    void readFromRegistry();
+    LONGLONG bufferSizeToRefTime(long bufferSize) const;    
     void writeToRegistry();
-    ASIOSampleType getASIOSampleType() const;
+    void readFromRegistry();
     void shutdown();
+    ASIOSampleType getASIOSampleType() const;    
     void clearState();
     void setMostReliableFormat();
 
@@ -119,7 +129,7 @@ private:
 
     //fields filled by createBuffers()/cleaned by disposeBuffers()
     vector< vector<BYTE> > m_buffers[2];
-	ASIOCallbacks * m_callbacks;
+    ASIOCallbacks* m_callbacks;
 
     //fields filled by start()/cleaned by stop()
     HANDLE m_hPlayThreadIsRunningEvent;
