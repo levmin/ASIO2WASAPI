@@ -644,7 +644,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     wchar_t tmpBuff[8] = { 0 };
                     for (UINT i = 2; i < 40; i = i + 2)
                     {
-                        if (IsFormatSupported(pDevice, i, pDriver->m_nSampleRate, AUDCLNT_SHAREMODE_EXCLUSIVE))
+                        if (IsFormatSupported(pDevice, i, 48000, AUDCLNT_SHAREMODE_EXCLUSIVE))
                         {
                             SendDlgItemMessageW(hwndDlg, IDC_CHANNELS, CB_ADDSTRING, 0, (LPARAM)_itow(i, tmpBuff, 10));
                         }
@@ -658,7 +658,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 
                     for (UINT i = 0; i < sampleRatesLength; i++)
                     {
-                        if (IsFormatSupported(pDevice, pDriver->m_nChannels, _wtoi(sampleRates[i]), AUDCLNT_SHAREMODE_EXCLUSIVE))
+                        if (IsFormatSupported(pDevice, 2, _wtoi(sampleRates[i]), AUDCLNT_SHAREMODE_EXCLUSIVE))
                         {
                             SendDlgItemMessageW(hwndDlg, IDC_SAMPLE_RATE, CB_ADDSTRING, 0, (LPARAM)sampleRates[i]);
                         }
