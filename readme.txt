@@ -11,7 +11,8 @@ Version 1.1
 2.Fixed non modifiable 100 ms latency problem.
 3.Fixed too quiet rendering in case of supported 24-bit PCM format.
 4.Count of supported channels is calculated automatically.
-5.Supported sample rates are calculated automatically .
+5.Supported sample rates are calculated automatically.
+6.Added support for default device. Driver can restore itself when default device or audio properties are changed in Windows.
 
 
 Version 1.0
