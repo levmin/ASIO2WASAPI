@@ -33,6 +33,7 @@ struct IAudioRenderClient;
               if ((punk) != NULL)  \
                 { (punk)->Release(); (punk) = NULL; }
 
+#include <Mmdeviceapi.h>
 #include "COMBaseClasses.h"
 #include "asiosys.h"
 #include "iasiodrv.h"
@@ -40,7 +41,46 @@ struct IAudioRenderClient;
 extern CLSID CLSID_ASIO2WASAPI_DRIVER;
 const char * const szDescription = "ASIO2WASAPI";
 
-static bool UseDefaultDevice = false;
+class ASIO2WASAPI;
+
+class CMMNotificationClient : public IMMNotificationClient
+{
+    LONG _cRef;
+    IMMDeviceEnumerator* _pEnumerator;
+    ASIO2WASAPI* _asio2Wasapi;
+
+public:
+    CMMNotificationClient(ASIO2WASAPI* asio2Wasapi);
+
+    ~CMMNotificationClient();
+
+    // IUnknown methods -- AddRef, Release, and QueryInterface
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(
+        REFIID riid, VOID** ppvInterface);
+
+    // Callback methods for device-event notifications.
+
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(
+        EDataFlow flow, ERole role,
+        LPCWSTR pwstrDeviceId);
+
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR pwstrDeviceId);;
+
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR pwstrDeviceId);
+
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(
+        LPCWSTR pwstrDeviceId,
+        DWORD dwNewState);
+
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(
+        LPCWSTR pwstrDeviceId,
+        const PROPERTYKEY key);
+};
 
 
 class ASIO2WASAPI : public IASIO, public CUnknown
@@ -97,7 +137,12 @@ public:
 	ASIOError future (long selector, void *opt);
 	ASIOError outputReady ();
 
+/// WASAPI specific
+    bool getUseDefaultDevice() { return m_useDefaultDevice; };
+    void setUseDefaultDevice(bool value) { m_useDefaultDevice = value; };
 private:
+    //for default device changed notification
+    CMMNotificationClient* pNotificationClient;
 
     static DWORD WINAPI PlayThreadProc(LPVOID pThis);
     static BOOL CALLBACK ControlPanelProc(HWND hwndDlg, 
@@ -126,6 +171,9 @@ private:
     WAVEFORMATEXTENSIBLE m_waveFormat;
     int m_bufferSize;           //in audio frames
     HWND m_hAppWindowHandle;
+    
+    //WASAPI specific
+    bool m_useDefaultDevice;
 
     //fields filled by createBuffers()/cleaned by disposeBuffers()
     vector< vector<BYTE> > m_buffers[2];

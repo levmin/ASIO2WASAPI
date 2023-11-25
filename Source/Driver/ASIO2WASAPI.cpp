@@ -68,101 +68,87 @@ public:
     }
 };
 
- class CMMNotificationClient : public IMMNotificationClient
+/// CMMNotificationClient
+
+CMMNotificationClient::CMMNotificationClient(ASIO2WASAPI* asio2Wasapi) :
+    _cRef(1),
+    _pEnumerator(NULL)
 {
-    LONG _cRef;
-    IMMDeviceEnumerator* _pEnumerator; 
-    ASIO2WASAPI* _asio2Wasapi;
+    _asio2Wasapi = asio2Wasapi;
+}
 
-public:
-    CMMNotificationClient(ASIO2WASAPI* asio2Wasapi) :
-        _cRef(1),
-        _pEnumerator(NULL)
+CMMNotificationClient::~CMMNotificationClient()
+{
+    SAFE_RELEASE(_pEnumerator)
+}
+
+ULONG __stdcall CMMNotificationClient::AddRef()
+{
+    return InterlockedIncrement(&_cRef);
+}
+
+ULONG __stdcall CMMNotificationClient::Release()
+{
+    ULONG ulRef = InterlockedDecrement(&_cRef);
+    if (0 == ulRef)
     {
-        _asio2Wasapi = asio2Wasapi;
+        delete this;
     }
+    return ulRef;
+}
 
-    ~CMMNotificationClient()
+HRESULT __stdcall CMMNotificationClient::QueryInterface(REFIID riid, VOID** ppvInterface)
+{
+    if (IID_IUnknown == riid)
     {
-        SAFE_RELEASE(_pEnumerator)
+        AddRef();
+        *ppvInterface = (IUnknown*)this;
     }
-
-    // IUnknown methods -- AddRef, Release, and QueryInterface
-
-    ULONG STDMETHODCALLTYPE AddRef()
+    else if (__uuidof(IMMNotificationClient) == riid)
     {
-        return InterlockedIncrement(&_cRef);
+        AddRef();
+        *ppvInterface = (IMMNotificationClient*)this;
     }
-
-    ULONG STDMETHODCALLTYPE Release()
+    else
     {
-        ULONG ulRef = InterlockedDecrement(&_cRef);
-        if (0 == ulRef)
-        {
-            delete this;
-        }
-        return ulRef;
+        *ppvInterface = NULL;
+        return E_NOINTERFACE;
     }
+    return S_OK;
+}
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(
-        REFIID riid, VOID** ppvInterface)
+HRESULT __stdcall CMMNotificationClient::OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR pwstrDeviceId)
+{
+    if (flow == eRender && role == eConsole)
     {
-        if (IID_IUnknown == riid)
-        {
-            AddRef();
-            *ppvInterface = (IUnknown*)this;
-        }
-        else if (__uuidof(IMMNotificationClient) == riid)
-        {
-            AddRef();
-            *ppvInterface = (IMMNotificationClient*)this;
-        }
-        else
-        {
-            *ppvInterface = NULL;
-            return E_NOINTERFACE;
-        }
-        return S_OK;
+        ASIOCallbacks* callbacks = _asio2Wasapi->getCallbacks();
+        if (_asio2Wasapi->getUseDefaultDevice() && callbacks)
+            callbacks->asioMessage(kAsioResetRequest, 0, NULL, NULL);
     }
+    return S_OK;
+}
 
-    // Callback methods for device-event notifications.
+HRESULT __stdcall CMMNotificationClient::OnDeviceAdded(LPCWSTR pwstrDeviceId)
+{
+    return S_OK;
+}
 
-    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(
-        EDataFlow flow, ERole role,
-        LPCWSTR pwstrDeviceId)
-    {        
-        if (UseDefaultDevice)
-            _asio2Wasapi->getCallbacks()->asioMessage(kAsioResetRequest, 0, NULL, NULL);
-        return S_OK;
-    }
+HRESULT __stdcall CMMNotificationClient::OnDeviceRemoved(LPCWSTR pwstrDeviceId)
+{
+    return S_OK;
+}
 
-    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR pwstrDeviceId)
-    {     
-       return S_OK;
-    };
+HRESULT __stdcall CMMNotificationClient::OnDeviceStateChanged(LPCWSTR pwstrDeviceId, DWORD dwNewState)
+{
+    return S_OK;
+}
 
-    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR pwstrDeviceId)
-    {       
-        return S_OK;
-    }
+inline HRESULT __stdcall CMMNotificationClient::OnPropertyValueChanged(LPCWSTR pwstrDeviceId, const PROPERTYKEY key)
+{
+    return S_OK;
+}
 
-    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(
-        LPCWSTR pwstrDeviceId,
-        DWORD dwNewState)
-    {   
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(
-        LPCWSTR pwstrDeviceId,
-        const PROPERTYKEY key)
-    {       
-        return S_OK;
-    }
-};
-
- static CMMNotificationClient* pNotificationClient = NULL;
-
+/// ASIO2WASAPI
 
 inline long ASIO2WASAPI::refTimeToBufferSize(REFERENCE_TIME time) const
 {
@@ -465,7 +451,7 @@ void ASIO2WASAPI::readFromRegistry()
         if (size)
             RegGetValueW(key,NULL,szDeviceId,RRF_RT_REG_SZ,NULL,&m_deviceId[0],&size);
         RegCloseKey(key);
-        UseDefaultDevice = (size < 16);
+        m_useDefaultDevice = (size < 16);
     }
 }
 
@@ -583,7 +569,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 
                     //get the selected device's index from the dialog
                     LRESULT lr = SendDlgItemMessage(hwndDlg, IDC_DEVICE, CB_GETCURSEL, 0, 0);
-                    UseDefaultDevice = !lr;
+                    pDriver->setUseDefaultDevice(!lr);
 
                     vector<wchar_t>& selectedDeviceId = deviceStringIds[lr];
                                         
@@ -598,7 +584,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                         return 0;
                     CReleaser r1(pEnumerator);
 
-                    if (!UseDefaultDevice)
+                    if (!pDriver->getUseDefaultDevice())
                     {                      
                         IMMDeviceCollection* pMMDeviceCollection = NULL;
                         hr = pEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pMMDeviceCollection);
@@ -740,7 +726,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                             if (FAILED(hr)) 
                                 return 0;
     
-							if (!UseDefaultDevice)
+							if (!pDriver->getUseDefaultDevice())
 								for (UINT i = 0; i < nDevices; i++)
 								{
 									IMMDevice* pMMDevice = NULL;
@@ -933,7 +919,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     }
                 }
             SendDlgItemMessage(hwndDlg,IDC_DEVICE,CB_SETCURSEL,nItemIdIndex,0);
-            UseDefaultDevice = !nItemIdIndex;
+            pDriver->setUseDefaultDevice(!nItemIdIndex);
 
             wchar_t tmpBuff[8] = { 0 };
             for (UINT i = 2; i < 40; i = i + 2)
@@ -1199,7 +1185,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     
     bool bDeviceFound = false;
     
-	if (!UseDefaultDevice)
+	if (!m_useDefaultDevice)
 		for (UINT i = 0; i < nDevices; i++)
 		{
 			IMMDevice* pMMDevice = NULL;
