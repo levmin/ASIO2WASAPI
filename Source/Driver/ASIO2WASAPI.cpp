@@ -1408,7 +1408,7 @@ ASIOError ASIO2WASAPI::getChannelInfo (ASIOChannelInfo *info)
     info->type = getASIOSampleType();
     info->channelGroup = 0;
     info->isActive = (m_buffers[0].size() > 0) ? ASIOTrue:ASIOFalse;
-    const char * knownChannelNames[] = 
+    const char* knownChannelNames[] =
     {
         "Front left",
         "Front right",
@@ -1421,10 +1421,26 @@ ASIOError ASIO2WASAPI::getChannelInfo (ASIOChannelInfo *info)
         "Back center",
         "Side left",
         "Side right",
-    };                             
+        "Top center",
+        "Top front left",
+        "Top front center",
+        "Top front right",
+        "Top back left",
+        "Top back center",
+        "Top back right"
+    };
 
-    strcpy_s(info->name, sizeof(info->name),
-        (info->channel < sizeof(knownChannelNames)/sizeof(knownChannelNames[0])) ? knownChannelNames[info->channel] : "Unknown");
+    if (info->channel < sizeof(knownChannelNames) / sizeof(knownChannelNames[0]))
+    {
+        strcpy_s(info->name, sizeof(info->name), knownChannelNames[info->channel]);
+    }
+    else
+    {
+        char unknownTxt[12] = "Unknown ";
+        char convTxt[12] = { 0 };
+        strncat_s(unknownTxt, itoa(info->channel, convTxt, 10), 3);
+        strcpy_s(info->name, sizeof(info->name), unknownTxt);
+    }
 
     return ASE_OK;
 }
