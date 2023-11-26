@@ -259,7 +259,7 @@ BOOL IsFormatSupported (IMMDevice* pDevice, WORD nChannels, DWORD nSampleRate, A
 
 }
 
-IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, int bufferSize)
+IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, int& bufferSize)
 {
     if (!pDevice || !pWaveFormat)
         return NULL;
@@ -293,15 +293,15 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, i
                          pWaveFormat,
                          NULL);
         
+    UINT tmpBuffSize = 0;
     if (hr ==  AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED)
-    {
-        UINT bufferSize = 0;
-        hr = pAudioClient->GetBufferSize(&bufferSize);
+    {       
+        hr = pAudioClient->GetBufferSize(&tmpBuffSize);
         if (FAILED(hr))
             return NULL;
 
         const double REFTIME_UNITS_PER_SECOND = 10000000.;
-        REFERENCE_TIME hnsAlignedDuration = static_cast<REFERENCE_TIME>(ceil(bufferSize / (pWaveFormat->nSamplesPerSec/ REFTIME_UNITS_PER_SECOND) ));
+        REFERENCE_TIME hnsAlignedDuration = static_cast<REFERENCE_TIME>(ceil(tmpBuffSize / (pWaveFormat->nSamplesPerSec/ REFTIME_UNITS_PER_SECOND) ));
         r.deactivate();
         SAFE_RELEASE(pAudioClient);
         hr = pDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
@@ -316,13 +316,18 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, i
                             pWaveFormat,
                             NULL);
     }
+     
     if (FAILED(hr))
         return NULL;
+    
+    pAudioClient->GetBufferSize(&tmpBuffSize); //calculate real latency/buffer size
+    bufferSize = (int)round(tmpBuffSize / (pWaveFormat->nSamplesPerSec * 0.001));
+
     r.deactivate();
     return pAudioClient;
 }
 
-BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int nbufferSize, WAVEFORMATEXTENSIBLE * pwfxt = NULL, IAudioClient * * ppAudioClient = NULL)
+BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& nbufferSize, WAVEFORMATEXTENSIBLE * pwfxt = NULL, IAudioClient * * ppAudioClient = NULL)
 {
     if (!pDevice)
          return FALSE;
@@ -776,11 +781,20 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                         pDriver->shutdown();
 
                         //make sure the device supports this combination of nChannels and nSampleRate
+                        int tmpBuffSize = nBufferSize;
                         BOOL rc = FindStreamFormat(pDevice,nChannels, nSampleRate, nBufferSize);
                         if (!rc)
                         {
                             MessageBox(hwndDlg,"Format is not supported in WASAPI exclusive mode.",szDescription,MB_OK | MB_ICONWARNING);
                             return 0;
+                        }
+                        else if (tmpBuffSize != nBufferSize) 
+                        {
+                            char msgTxt[45] = "Minimum buffer size seems to be ";
+                            char convTxt[10] = { 0 };
+                            strcat_s(msgTxt, itoa(nBufferSize, convTxt, 10));
+                            strcat_s(msgTxt, " ms.");
+                            MessageBox(hwndDlg, msgTxt, szDescription, MB_OK | MB_ICONINFORMATION);
                         }
                         
                         //copy selected device/sample rate/channel combination into the driver
