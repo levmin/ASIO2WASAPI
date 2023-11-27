@@ -278,18 +278,18 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, i
     
    
     //calculate buffer size and duration
-    REFERENCE_TIME hnsDefaultDuration = 0;
-    hr = pAudioClient->GetDevicePeriod(&hnsDefaultDuration, NULL);
+    REFERENCE_TIME hnsMinimumDuration = 0;
+    hr = pAudioClient->GetDevicePeriod(NULL, &hnsMinimumDuration); //Actually 2nd parameter should be used for exclusive mode streams...
     if (FAILED(hr))
         return NULL;
 
-    hnsDefaultDuration = max(hnsDefaultDuration, (REFERENCE_TIME)bufferSize * 10000);
+    hnsMinimumDuration = max(hnsMinimumDuration, (REFERENCE_TIME)bufferSize * 10000);
 
     hr = pAudioClient->Initialize(
                          AUDCLNT_SHAREMODE_EXCLUSIVE,
                          AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                         hnsDefaultDuration,
-                         hnsDefaultDuration,
+                         hnsMinimumDuration,
+                         hnsMinimumDuration,
                          pWaveFormat,
                          NULL);
         
@@ -483,7 +483,7 @@ void ASIO2WASAPI::clearState()
     //fields valid before initialization
     m_nChannels = 2;
     m_nSampleRate = 48000;
-    m_nBufferSize = 20;
+    m_nBufferSize = 10;
 
     memset(m_errorMessage,0,sizeof(m_errorMessage));
     m_deviceId.clear();
@@ -675,7 +675,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     {
                         int nChannels = 2;
                         int nSampleRate = 48000;
-                        int nBufferSize = 20;
+                        int nBufferSize = 10;
                         //get nChannels and nSampleRate from the dialog
                         {
                             BOOL bSuccess = FALSE;
@@ -1183,7 +1183,7 @@ void ASIO2WASAPI::setMostReliableFormat()
 {
     m_nChannels = 2;
     m_nSampleRate = 48000;
-    //m_nBufferSize = 20;
+    //m_nBufferSize = 10;
 
     memset(&m_waveFormat,0,sizeof(m_waveFormat));
     WAVEFORMATEX& fmt = m_waveFormat.Format;
