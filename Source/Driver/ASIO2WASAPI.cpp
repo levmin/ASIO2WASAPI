@@ -495,7 +495,7 @@ void ASIO2WASAPI::clearState()
     m_pAudioClient = NULL;
     memset(&m_waveFormat,0,sizeof(m_waveFormat));
     m_bufferIndex = 0;
-    m_hAppWindowHandle = NULL;
+    m_hAppWindowHandle = NULL;   
 
     //fields filled by createBuffers()/cleaned by disposeBuffers()
     m_buffers[0].clear();
@@ -541,9 +541,12 @@ void ASIO2WASAPI::shutdown()
         return;
     CReleaser r2(pEnumerator);
     
-    pEnumerator->UnregisterEndpointNotificationCallback(pNotificationClient);
-    delete(pNotificationClient);
-    pNotificationClient = NULL;    
+    if (pNotificationClient)
+    {
+        pEnumerator->UnregisterEndpointNotificationCallback(pNotificationClient);
+        delete(pNotificationClient);
+        pNotificationClient = NULL;
+    }
    
 }
 
@@ -1176,6 +1179,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
 		return true;
 
     m_hAppWindowHandle = (HWND) sysRef;
+    pNotificationClient = NULL;
 
     HRESULT hr=S_OK;
     IMMDeviceEnumerator *pEnumerator = NULL;
