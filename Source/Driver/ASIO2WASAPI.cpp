@@ -1045,12 +1045,32 @@ DWORD WINAPI ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
     
     if (pDriver->m_callbacks)
         pDriver->m_callbacks->bufferSwitch(1-pDriver->m_bufferIndex,ASIOTrue);
+
+    DWORD normalInterval = ((DWORD)round(pDriver->m_bufferSize / (pDriver->m_nSampleRate * 0.001))) + 1;
+    DWORD counter = 0;
+    DWORD startTime = timeGetTime();
+    DWORD endTime = 0;
+    //char convTxt[11] = { 0 };
     
     DWORD retval = 0;
     HANDLE events[2] = {pDriver->m_hStopPlayThreadEvent, hEvent };
     while ((retval  = WaitForMultipleObjects(2,events,FALSE, INFINITE)) == (WAIT_OBJECT_0 + 1))
     {//the hEvent is signalled and m_hStopPlayThreadEvent is not
         // Grab the next empty buffer from the audio device.
+       
+        endTime = timeGetTime() - startTime; //workaround for driver bug when suddenly event interval increases with a fixed amount.
+       // OutputDebugString(itoa(endTime, convTxt, 10));
+        if (endTime > normalInterval)
+            counter++;
+        else
+            counter = 0;
+
+        if (counter > 10)
+        {
+            pDriver->m_callbacks->asioMessage(kAsioResetRequest, 0, NULL, NULL);
+            break;
+        }
+
         hr = pDriver->LoadData(pRenderClient);
         if (hr != S_OK && hr != AUDCLNT_E_BUFFER_ERROR)
         {
@@ -1061,6 +1081,8 @@ DWORD WINAPI ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
         pDriver->m_samplePosition += pDriver->m_bufferSize;
         if (pDriver->m_callbacks)
             pDriver->m_callbacks->bufferSwitch(1-pDriver->m_bufferIndex,ASIOTrue);
+
+        startTime = timeGetTime();
     }
 
     hr = pAudioClient->Stop();  // Stop playing.
