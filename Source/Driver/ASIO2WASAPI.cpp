@@ -301,7 +301,7 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, i
             return NULL;
 
         const double REFTIME_UNITS_PER_SECOND = 10000000.;
-        REFERENCE_TIME hnsAlignedDuration = static_cast<REFERENCE_TIME>(ceil(tmpBuffSize / (pWaveFormat->nSamplesPerSec/ REFTIME_UNITS_PER_SECOND) ));
+        REFERENCE_TIME hnsAlignedDuration = static_cast<REFERENCE_TIME>((REFTIME_UNITS_PER_SECOND / pWaveFormat->nSamplesPerSec * tmpBuffSize) + 0.5);
         r.deactivate();
         SAFE_RELEASE(pAudioClient);
         hr = pDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
@@ -1048,9 +1048,17 @@ DWORD WINAPI ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
 
     DWORD normalInterval = ((DWORD)round(pDriver->m_bufferSize / (pDriver->m_nSampleRate * 0.001))) + 1;
     DWORD counter = 0;
-    DWORD startTime = timeGetTime();
+    LARGE_INTEGER startTime = { 0 };
     DWORD endTime = 0;
-    //char convTxt[11] = { 0 };
+    double	queryPerformanceUnit = 0.0;
+
+    LARGE_INTEGER tmpFreq;
+    if (QueryPerformanceFrequency(&tmpFreq))
+    {
+        queryPerformanceUnit = 1.0 / (tmpFreq.QuadPart * 0.001);
+        QueryPerformanceCounter(&startTime);
+    }
+    //char convTxt[11] = { 0 }
     
     DWORD retval = 0;
     HANDLE events[2] = {pDriver->m_hStopPlayThreadEvent, hEvent };
@@ -1058,8 +1066,13 @@ DWORD WINAPI ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
     {//the hEvent is signalled and m_hStopPlayThreadEvent is not
         // Grab the next empty buffer from the audio device.
        
-        endTime = timeGetTime() - startTime; //workaround for driver bug when suddenly event interval increases with a fixed amount.
-       // OutputDebugString(itoa(endTime, convTxt, 10));
+       //workaround for driver bug when suddenly event interval increases with a fixed amount.
+       //timeGetTime is not reliable on Win11 so we use QPC functions. 
+        LARGE_INTEGER tmpCounter = { 0 };
+        QueryPerformanceCounter(&tmpCounter);
+        endTime = (DWORD)round((tmpCounter.QuadPart - startTime.QuadPart) * queryPerformanceUnit);
+        //OutputDebugString(itoa(endTime, convTxt, 10));
+
         if (endTime > normalInterval)
             counter++;
         else
@@ -1082,7 +1095,7 @@ DWORD WINAPI ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
         if (pDriver->m_callbacks)
             pDriver->m_callbacks->bufferSwitch(1-pDriver->m_bufferIndex,ASIOTrue);
 
-        startTime = timeGetTime();
+        QueryPerformanceCounter(&startTime);
     }
 
     hr = pAudioClient->Stop();  // Stop playing.
