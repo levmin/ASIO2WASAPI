@@ -222,7 +222,15 @@ BOOL IsFormatSupported (IMMDevice* pDevice, WORD nChannels, DWORD nSampleRate, A
     waveFormat.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
     waveFormat.Samples.wValidBitsPerSample = waveFormat.Format.wBitsPerSample;
     waveFormat.dwChannelMask = dwChannelMask;
-    waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;   
+    //test native support for 32-bit float first
+    waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+    
+    hr = pAudioClient->IsFormatSupported(shareMode, (WAVEFORMATEX*)&waveFormat, NULL);
+    if (hr == S_OK)
+        return TRUE;
+   
+    //then try integer formats, first 32-bit int
+    waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
 
     hr = pAudioClient->IsFormatSupported(shareMode, (WAVEFORMATEX*)&waveFormat, NULL);
     if (hr == S_OK)
@@ -354,9 +362,18 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& n
    waveFormat.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE)-sizeof(WAVEFORMATEX);
    waveFormat.Samples.wValidBitsPerSample=waveFormat.Format.wBitsPerSample;
    waveFormat.dwChannelMask = dwChannelMask;
-   waveFormat.SubFormat =   KSDATAFORMAT_SUBTYPE_PCM;
+   //test for native support for 32-bit float first
+   waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
 
    pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize);
+  
+   if (pAudioClient)
+       goto Finish;
+   
+   //then try integer formats, first 32-bit int
+   waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+
+   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize);
    
    if (pAudioClient)
        goto Finish;
@@ -418,17 +435,20 @@ STDMETHODIMP ASIO2WASAPI::NonDelegatingQueryInterface (REFIID riid, void ** ppv)
 
 ASIOSampleType ASIO2WASAPI::getASIOSampleType() const
 {
+    if (m_waveFormat.SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) return ASIOSTFloat32LSB;
+
     switch (m_waveFormat.Format.wBitsPerSample)
     {
         case 16: return  ASIOSTInt16LSB;
         case 24: return  ASIOSTInt24LSB;
-        case 32: 
-            switch (m_waveFormat.Samples.wValidBitsPerSample)
+        case 32: return  ASIOSTInt32LSB;
+           /* switch (m_waveFormat.Samples.wValidBitsPerSample)
             {
                 case 32: return ASIOSTInt32LSB;
                 case 24: return ASIOSTInt32LSB; //falco: In case of 24-bit data Windows simply chops the last 8 bits. No special alignment needed. ASIOSTInt32LSB24 is simply wrong. 
                 default: return ASIOSTLastEntry ;
             }
+           */
         default: return ASIOSTLastEntry;
     }
 }
@@ -636,7 +656,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     }
 
                     wchar_t tmpBuff[8] = { 0 };
-                    for (UINT i = 2; i < 40; i = i + 2)
+                    for (UINT i = 2; i < 32; i += 2)
                     {
                         if (IsFormatSupported(pDevice, i, 48000, AUDCLNT_SHAREMODE_EXCLUSIVE))
                         {
