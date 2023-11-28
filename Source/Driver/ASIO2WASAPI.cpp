@@ -1080,8 +1080,12 @@ DWORD WINAPI ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
 
         if (counter > 10)
         {
-            pDriver->m_callbacks->asioMessage(kAsioResetRequest, 0, NULL, NULL);
-            break;
+            //pDriver->m_callbacks->asioMessage(kAsioResetRequest, 0, NULL, NULL);
+            //break;
+            pAudioClient->Stop();
+            pAudioClient->Reset();
+            pAudioClient->Start();
+            counter = 0;
         }
 
         hr = pDriver->LoadData(pRenderClient);
