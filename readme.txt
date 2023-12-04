@@ -5,6 +5,12 @@ gpl.txt - GNU Public License
 Change log:
 
 Falcosoft:
+Version 1.2
+
+1. Added support for WASAPI shared mode
+2. Modified versioning so all projects get the version info from driver's version.h
+
+Falcosoft:
 Version 1.1
 
 1.Fixed supported format query.
@@ -13,7 +19,6 @@ Version 1.1
 4.Count of supported channels is calculated automatically.
 5.Supported sample rates are calculated automatically.
 6.Added support for default device. Driver can restore itself when default device or audio properties are changed in Windows.
-
 
 Version 1.0
 
