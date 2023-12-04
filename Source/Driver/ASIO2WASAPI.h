@@ -35,6 +35,7 @@ struct IAudioRenderClient;
                 { (punk)->Release(); (punk) = NULL; }
 
 #include <Mmdeviceapi.h>
+#include <Audioclient.h>
 #include "COMBaseClasses.h"
 #include "asiosys.h"
 #include "iasiodrv.h"
@@ -141,19 +142,21 @@ public:
 /// WASAPI specific
     bool getUseDefaultDevice() { return m_useDefaultDevice; };
     void setUseDefaultDevice(bool value) { m_useDefaultDevice = value; };
-private:
+private:   
     //for default device changed notification
     CMMNotificationClient* pNotificationClient;
-
+    
     static DWORD WINAPI PlayThreadProc(LPVOID pThis);
-    static BOOL CALLBACK ControlPanelProc(HWND hwndDlg, 
-         UINT message, WPARAM wParam, LPARAM lParam);
-    HRESULT LoadData(IAudioRenderClient * pRenderClient);
+    static DWORD WINAPI PlayThreadProcShared(LPVOID pThis);
+    static BOOL CALLBACK ControlPanelProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam);    
+    static void initInputFields(IMMDevice* pDevice, ASIO2WASAPI* pDriver, const HWND hwndDlg);
+    
+    HRESULT LoadData(IAudioRenderClient * pRenderClient);    
     long refTimeToBufferSize(LONGLONG time) const;
     LONGLONG bufferSizeToRefTime(long bufferSize) const;    
     void writeToRegistry();
     void readFromRegistry();
-    void shutdown();
+    void shutdown();   
     ASIOSampleType getASIOSampleType() const;    
     void clearState();
     void setMostReliableFormat();
@@ -171,10 +174,12 @@ private:
     IAudioClient * m_pAudioClient;
     WAVEFORMATEXTENSIBLE m_waveFormat;
     int m_bufferSize;           //in audio frames
-    HWND m_hAppWindowHandle;
+    HWND m_hAppWindowHandle;    
     
     //WASAPI specific
-    bool m_useDefaultDevice;
+    bool m_useDefaultDevice;    
+    AUDCLNT_SHAREMODE m_wasapiExclusiveMode = AUDCLNT_SHAREMODE_EXCLUSIVE;
+    BOOL m_wasapiEnableResampling = FALSE;
 
     //fields filled by createBuffers()/cleaned by disposeBuffers()
     vector< vector<BYTE> > m_buffers[2];
