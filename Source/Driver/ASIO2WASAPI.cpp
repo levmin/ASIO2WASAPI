@@ -39,6 +39,60 @@ const IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
 
 const char * szPrefsRegKey = "Software\\ASIO2WASAPI";
 
+#pragma comment(lib,"Version.lib") 
+wchar_t* GetFileVersion(wchar_t* result)
+{
+    DWORD               dwSize = 0;
+    BYTE* pVersionInfo = NULL;
+    VS_FIXEDFILEINFO* pFileInfo = NULL;
+    UINT                pLenFileInfo = 0;
+    wchar_t tmpBuff[MAX_PATH];
+
+    HMODULE mHandle;
+
+#ifdef _WIN64           
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"ASIO2WASAPI64.dll", &mHandle);
+#else	
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"ASIO2WASAPI.dll", &mHandle);
+#endif
+
+    GetModuleFileNameW(mHandle, tmpBuff, MAX_PATH);
+
+    dwSize = GetFileVersionInfoSizeW(tmpBuff, NULL);
+    if (dwSize == 0)
+    {
+        return NULL;
+    }
+
+    pVersionInfo = new BYTE[dwSize];
+
+    if (!GetFileVersionInfoW(tmpBuff, 0, dwSize, pVersionInfo))
+    {
+        delete[] pVersionInfo;
+        return NULL;
+    }
+
+    if (!VerQueryValue(pVersionInfo, TEXT("\\"), (LPVOID*)&pFileInfo, &pLenFileInfo))
+    {
+        delete[] pVersionInfo;
+        return NULL;
+    }
+
+    lstrcatW(result, L"version: ");
+    _ultow_s((pFileInfo->dwFileVersionMS >> 16) & 0xffff, tmpBuff, MAX_PATH, 10);
+    lstrcatW(result, tmpBuff);
+    lstrcatW(result, L".");
+    _ultow_s((pFileInfo->dwFileVersionMS) & 0xffff, tmpBuff, MAX_PATH, 10);
+    lstrcatW(result, tmpBuff);
+    lstrcatW(result, L".");
+    _ultow_s((pFileInfo->dwFileVersionLS >> 16) & 0xffff, tmpBuff, MAX_PATH, 10);
+    lstrcatW(result, tmpBuff);
+    //lstrcatW(result, L".");
+    //lstrcatW(result, _ultow((pFileInfo->dwFileVersionLS) & 0xffff, tmpBuff, 10));
+
+    return result;
+}
+
 BOOL IsWin7OrNewer()
 {
     OSVERSIONINFOEX osvi;
@@ -308,11 +362,13 @@ BOOL IsFormatSupported (IMMDevice* pDevice, WORD nChannels, DWORD nSampleRate, A
 
 }
 
-IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, int& bufferSize, AUDCLNT_SHAREMODE shareMode, BOOL doResampling)
+IAudioClient* getAudioClient(IMMDevice* pDevice, WAVEFORMATEX* pWaveFormat, int& bufferSize, AUDCLNT_SHAREMODE shareMode, BOOL doResampling, BOOL doLowLatency)
+
 {
     if (!pDevice || !pWaveFormat)
         return NULL;
 
+    UINT tmpBuffSize = 0;
     IAudioClient * pAudioClient = NULL;
     HRESULT hr = pDevice->Activate(
                     IID_IAudioClient, CLSCTX_ALL,
@@ -325,61 +381,78 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, i
     hr=pAudioClient->IsFormatSupported(shareMode, pWaveFormat, shareMode ? NULL : &closeMatch);
     if (!shareMode) CoTaskMemFree(closeMatch);
 
-    if (hr == AUDCLNT_E_UNSUPPORTED_FORMAT) 
-        return NULL;
-    
-   
-    //calculate buffer size and duration
-    REFERENCE_TIME hnsMinimumDuration = 0;
-    if (shareMode)
-        hr = pAudioClient->GetDevicePeriod(NULL, &hnsMinimumDuration); //Actually 2nd parameter should be used for exclusive mode streams...
+    if (hr == AUDCLNT_E_UNSUPPORTED_FORMAT) return NULL;
+
+    if (!shareMode && doLowLatency) //Win10+ special low latency shared mode 
+    {
+        IAudioClient3* pAudioClient3 = NULL;
+        hr = pAudioClient->QueryInterface(&pAudioClient3);
+        if (FAILED(hr) || !pAudioClient3) return NULL;
+
+        CReleaser ra3(pAudioClient3);
+        UINT32 minPeriod, maxPeriod, fundamentalPeriod, defaultPeriod, currentPeriod;
+        WAVEFORMATEX* format = NULL;
+        hr = pAudioClient3->GetCurrentSharedModeEnginePeriod(&format, &currentPeriod);
+        hr = pAudioClient3->GetSharedModeEnginePeriod(format, &defaultPeriod, &fundamentalPeriod, &minPeriod, &maxPeriod);
+        if (FAILED(hr)) return NULL;
+        while (minPeriod < (defaultPeriod / 2)) minPeriod += fundamentalPeriod; //aim is about 5ms update period, 240 samples at 48kHz in ASIO terms 
+        hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minPeriod, format, NULL);
+        CoTaskMemFree(format);
+        if (FAILED(hr)) return NULL;
+    }
     else
-        hr = pAudioClient->GetDevicePeriod(&hnsMinimumDuration, NULL ); 
+    {
+        //calculate buffer size and duration
+        REFERENCE_TIME hnsMinimumDuration = 0;
+        if (shareMode)
+            hr = pAudioClient->GetDevicePeriod(NULL, &hnsMinimumDuration); //Actually 2nd parameter should be used for exclusive mode streams...
+        else
+            hr = pAudioClient->GetDevicePeriod(&hnsMinimumDuration, NULL);
 
-    if (FAILED(hr))
-        return NULL;
-
-    
-    if (shareMode)
-        hnsMinimumDuration = max(hnsMinimumDuration, (REFERENCE_TIME)bufferSize * 10000);
-    else
-        hnsMinimumDuration = max(hnsMinimumDuration * 2, (REFERENCE_TIME)bufferSize * 10000);
-
-
-    hr = pAudioClient->Initialize(
-                         shareMode,
-                         AUDCLNT_STREAMFLAGS_EVENTCALLBACK | (!shareMode && doResampling ? (AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY) : 0),
-                         hnsMinimumDuration,
-                         shareMode ? hnsMinimumDuration : 0,
-                         pWaveFormat,
-                         NULL);
-        
-    UINT tmpBuffSize = 0;
-    if (hr ==  AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED)
-    {       
-        hr = pAudioClient->GetBufferSize(&tmpBuffSize);
         if (FAILED(hr))
             return NULL;
 
-        const double REFTIME_UNITS_PER_SECOND = 10000000.;
-        REFERENCE_TIME hnsAlignedDuration = static_cast<REFERENCE_TIME>((REFTIME_UNITS_PER_SECOND / pWaveFormat->nSamplesPerSec * tmpBuffSize) + 0.5);
-        r.deactivate();
-        SAFE_RELEASE(pAudioClient);
-        hr = pDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
-        if (FAILED(hr) || !pAudioClient)
-            return false;
-        r.reset(pAudioClient);
+
+        if (shareMode)
+            hnsMinimumDuration = max(hnsMinimumDuration, (REFERENCE_TIME)bufferSize * 10000);
+        else
+            hnsMinimumDuration = max(hnsMinimumDuration * 2, (REFERENCE_TIME)bufferSize * 10000);
+
+
         hr = pAudioClient->Initialize(
-                            shareMode,
-                            AUDCLNT_STREAMFLAGS_EVENTCALLBACK | (!shareMode && doResampling ? (AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY) : 0),
-                            hnsAlignedDuration,
-                            shareMode ? hnsAlignedDuration : 0,
-                            pWaveFormat,
-                            NULL);
+            shareMode,
+            AUDCLNT_STREAMFLAGS_EVENTCALLBACK | (!shareMode && doResampling ? (AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY) : 0),
+            hnsMinimumDuration,
+            shareMode ? hnsMinimumDuration : 0,
+            pWaveFormat,
+            NULL);
+
+        if (hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED)
+        {
+            hr = pAudioClient->GetBufferSize(&tmpBuffSize);
+            if (FAILED(hr))
+                return NULL;
+
+            const double REFTIME_UNITS_PER_SECOND = 10000000.;
+            REFERENCE_TIME hnsAlignedDuration = static_cast<REFERENCE_TIME>((REFTIME_UNITS_PER_SECOND / pWaveFormat->nSamplesPerSec * tmpBuffSize) + 0.5);
+            r.deactivate();
+            SAFE_RELEASE(pAudioClient);
+            hr = pDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
+            if (FAILED(hr) || !pAudioClient)
+                return false;
+            r.reset(pAudioClient);
+            hr = pAudioClient->Initialize(
+                shareMode,
+                AUDCLNT_STREAMFLAGS_EVENTCALLBACK | (!shareMode && doResampling ? (AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY) : 0),
+                hnsAlignedDuration,
+                shareMode ? hnsAlignedDuration : 0,
+                pWaveFormat,
+                NULL);
+        }
+
+        if (FAILED(hr))
+            return NULL;
     }
-     
-    if (FAILED(hr))
-        return NULL;
     
     pAudioClient->GetBufferSize(&tmpBuffSize); //calculate real latency/buffer size
     bufferSize = (int)round(tmpBuffSize / (pWaveFormat->nSamplesPerSec * 0.001));
@@ -388,7 +461,7 @@ IAudioClient * getAudioClient(IMMDevice * pDevice, WAVEFORMATEX * pWaveFormat, i
     return pAudioClient;
 }
 
-BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& nbufferSize, AUDCLNT_SHAREMODE shareMode, BOOL doResampling, WAVEFORMATEXTENSIBLE * pwfxt = NULL, IAudioClient * * ppAudioClient = NULL)
+BOOL FindStreamFormat(IMMDevice* pDevice, int nChannels, int nSampleRate, int& nbufferSize, AUDCLNT_SHAREMODE shareMode, BOOL doResampling, BOOL doLowLatency, WAVEFORMATEXTENSIBLE* pwfxt = NULL, IAudioClient** ppAudioClient = NULL)
 {
     if (!pDevice)
          return FALSE;
@@ -440,7 +513,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& n
    //test for native support for 32-bit float first
    waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
 
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling);
+   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling, doLowLatency);
   
    if (pAudioClient)
        goto Finish;
@@ -448,7 +521,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& n
    //then try integer formats, first 32-bit int
    waveFormat.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
 
-   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling);
+   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling, doLowLatency);
    
    if (pAudioClient)
        goto Finish;
@@ -456,7 +529,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& n
    //try 24-bit containered next
     waveFormat.Samples.wValidBitsPerSample = 24;
 
-   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling);
+   pAudioClient = getAudioClient(pDevice, (WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling, doLowLatency);
 
    if (pAudioClient)
        goto Finish; 
@@ -467,7 +540,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& n
    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
    waveFormat.Samples.wValidBitsPerSample=waveFormat.Format.wBitsPerSample;
 
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling);
+   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling, doLowLatency);
 
    if (pAudioClient)
        goto Finish;
@@ -478,7 +551,7 @@ BOOL FindStreamFormat(IMMDevice * pDevice, int nChannels,int nSampleRate, int& n
    waveFormat.Format.nAvgBytesPerSec = waveFormat.Format.nSamplesPerSec * waveFormat.Format.nBlockAlign;
    waveFormat.Samples.wValidBitsPerSample=waveFormat.Format.wBitsPerSample;
    
-   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling);
+   pAudioClient = getAudioClient(pDevice,(WAVEFORMATEX*)&waveFormat, nbufferSize, shareMode, doResampling, doLowLatency);
 
 Finish:
    BOOL bSuccess = (pAudioClient!=NULL);
@@ -538,6 +611,8 @@ const char * szSampRateRegValName = "Sample Rate";
 const char * szBufferSizeRegValName = "Buffer Size";
 const char * szWasapiModeRegValName = "WASAPI Exclusive Mode";
 const char * szEnableResamplingRegValName = "Enable Shared Mode Resampling";
+const char * szEnableLowLatencygRegValName = "Enable Shared Mode Low Latency";
+
 const wchar_t * szDeviceId = L"Device Id";
 
 void ASIO2WASAPI::readFromRegistry()
@@ -555,7 +630,9 @@ void ASIO2WASAPI::readFromRegistry()
         size = sizeof(m_wasapiExclusiveMode);
         RegGetValue(key, NULL, szWasapiModeRegValName, RRF_RT_REG_DWORD, NULL, &m_wasapiExclusiveMode, &size);
         size = sizeof(m_wasapiEnableResampling);
-        RegGetValue(key, NULL, szEnableResamplingRegValName, RRF_RT_REG_DWORD, NULL, &m_wasapiEnableResampling, &size);        
+        RegGetValue(key, NULL, szEnableResamplingRegValName, RRF_RT_REG_DWORD, NULL, &m_wasapiEnableResampling, &size);
+        size = sizeof(m_wasapiLowLatencySharedMode);
+        RegGetValue(key, NULL, szEnableLowLatencygRegValName, RRF_RT_REG_DWORD, NULL, &m_wasapiLowLatencySharedMode, &size);
         
         RegGetValueW(key,NULL,szDeviceId,RRF_RT_REG_SZ,NULL,NULL,&size);
         m_deviceId.resize(size/sizeof(m_deviceId[0]));
@@ -583,6 +660,8 @@ void ASIO2WASAPI::writeToRegistry()
         RegSetValueEx(key, szWasapiModeRegValName, NULL, REG_DWORD, (const BYTE*)&m_wasapiExclusiveMode, size);
         size = sizeof(m_wasapiEnableResampling);
         RegSetValueEx(key, szEnableResamplingRegValName, NULL, REG_DWORD, (const BYTE*)&m_wasapiEnableResampling, size);
+        size = sizeof(m_wasapiLowLatencySharedMode);
+        RegSetValueEx(key, szEnableLowLatencygRegValName, NULL, REG_DWORD, (const BYTE*)&m_wasapiLowLatencySharedMode, size);
         
         size = (DWORD)(m_deviceId.size()) * sizeof(m_deviceId[0]);        
         RegSetValueExW(key,szDeviceId,NULL,REG_SZ,(const BYTE *)&m_deviceId[0],size);
@@ -694,6 +773,35 @@ void ASIO2WASAPI::initInputFields(IMMDevice* pDevice, ASIO2WASAPI* pDriver, cons
         }
     }
 
+    IAudioClient3* pAudioClient3 = NULL;
+    hr = pAudioClient->QueryInterface(&pAudioClient3);
+    if (SUCCEEDED(hr) && pAudioClient3) CReleaser ra3(pAudioClient3);
+    if (!pDriver->m_wasapiExclusiveMode && SUCCEEDED(hr) && pAudioClient3)
+    {
+        UINT32 minPeriod, maxPeriod, fundamentalPeriod, defaultPeriod, currentPeriod;
+        WAVEFORMATEX* format;
+        pAudioClient3->GetCurrentSharedModeEnginePeriod(&format, &currentPeriod);
+        pAudioClient3->GetSharedModeEnginePeriod(format, &defaultPeriod, &fundamentalPeriod, &minPeriod, &maxPeriod);
+        CoTaskMemFree(format);
+        if (minPeriod < defaultPeriod)
+        {
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LOWLATENCY), TRUE);
+        }
+        else
+        {
+            SendDlgItemMessage(hwndDlg, IDC_LOWLATENCY, BM_SETCHECK, BST_UNCHECKED, 0);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_LOWLATENCY), FALSE);
+            pDriver->m_wasapiLowLatencySharedMode = FALSE;
+        }
+
+    }
+    else
+    {
+        SendDlgItemMessage(hwndDlg, IDC_LOWLATENCY, BM_SETCHECK, BST_UNCHECKED, 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_LOWLATENCY), FALSE);
+        pDriver->m_wasapiLowLatencySharedMode = FALSE;
+    }
+
     //channels
     wchar_t tmpBuff[8] = { 0 };
     for (UINT i = 2; i <= 20; i += 2)
@@ -744,16 +852,36 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             switch (LOWORD(wParam)) 
             { 
 
+            case IDC_LOWLATENCY:
+            {
+                if (HIWORD(wParam) == BN_CLICKED)
+                {
+                    LRESULT lr = SendDlgItemMessage(hwndDlg, IDC_LOWLATENCY, BM_GETCHECK, 0, 0);
+                    pDriver->m_wasapiLowLatencySharedMode = lr == BST_CHECKED;
+                    if (pDriver->m_wasapiLowLatencySharedMode)
+                    {
+                        pDriver->m_wasapiEnableResampling = FALSE;
+                        SendDlgItemMessage(hwndDlg, IDC_RESAMPLING, BM_SETCHECK, BST_UNCHECKED, 0);
+                    }
+                    PostMessage(hwndDlg, WM_COMMAND, IDC_DEVICE | (CBN_SELCHANGE << 16), 0);
+                }
+
+                break;
+            }
             case IDC_RESAMPLING:
             {
-                if (HIWORD(wParam) == BN_CLICKED) 
+                if (HIWORD(wParam) == BN_CLICKED)
                 {
                     LRESULT lr = SendDlgItemMessage(hwndDlg, IDC_RESAMPLING, BM_GETCHECK, 0, 0);
                     pDriver->m_wasapiEnableResampling = lr == BST_CHECKED;
+                    if (pDriver->m_wasapiEnableResampling)
+                    {
+                        pDriver->m_wasapiLowLatencySharedMode = FALSE;
+                        SendDlgItemMessage(hwndDlg, IDC_LOWLATENCY, BM_SETCHECK, BST_UNCHECKED, 0);
+                    }
                     PostMessage(hwndDlg, WM_COMMAND, IDC_DEVICE | (CBN_SELCHANGE << 16), 0);
-
                 }
-            
+
                 break;
             }
             case IDC_SHAREMODE:
@@ -966,7 +1094,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 
                         //make sure the device supports this combination of nChannels and nSampleRate
                         int tmpBuffSize = nBufferSize;
-                        BOOL rc = FindStreamFormat(pDevice,nChannels, nSampleRate, nBufferSize, pDriver->m_wasapiExclusiveMode, pDriver->m_wasapiEnableResampling);
+                        BOOL rc = FindStreamFormat(pDevice, nChannels, nSampleRate, nBufferSize, pDriver->m_wasapiExclusiveMode, pDriver->m_wasapiEnableResampling, pDriver->m_wasapiLowLatencySharedMode);
                         if (!rc)
                         {
                             if(pDriver->m_wasapiExclusiveMode)
@@ -978,7 +1106,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                         }
                         else if (tmpBuffSize != nBufferSize) 
                         {
-                            char msgTxt[45] = "Minimum buffer size seems to be ";
+                            char msgTxt[64] = "Closest valid buffer size seems to be ";
                             char convTxt[10] = { 0 };
                             strcat_s(msgTxt, itoa(nBufferSize, convTxt, 10));
                             strcat_s(msgTxt, " ms.");
@@ -1017,7 +1145,9 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 #else	
             SetWindowText(hwndDlg, "ASIO2WASAPI x86");
 #endif	
-
+            wchar_t fileversionBuff[32] = { 0 }; ;
+            SetWindowTextW(GetDlgItem(hwndDlg, IDC_VERSIONINFO), GetFileVersion(fileversionBuff));
+            
             HWND hwndOwner = 0;
             RECT rcOwner, rcDlg, rc;
 
@@ -1046,7 +1176,6 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             //SetDlgItemInt(hwndDlg,IDC_CHANNELS,(UINT)pDriver->m_nChannels,TRUE);
             //SetDlgItemInt(hwndDlg, IDC_SAMPLE_RATE, (UINT)pDriver->m_nSampleRate, TRUE);
             SetDlgItemInt(hwndDlg, IDC_BUFFERSIZE, (UINT)pDriver->m_nBufferSize, TRUE);
-
 
             IMMDeviceEnumerator *pEnumerator = NULL;
             DWORD flags = 0;
@@ -1143,6 +1272,8 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                     EnableWindow(GetDlgItem(hwndDlg, IDC_RESAMPLING), true);
                     if (pDriver->m_wasapiEnableResampling)
                         SendDlgItemMessage(hwndDlg, IDC_RESAMPLING, BM_SETCHECK, BST_CHECKED, 0);
+                    else if (pDriver->m_wasapiLowLatencySharedMode)
+                        SendDlgItemMessage(hwndDlg, IDC_LOWLATENCY, BM_SETCHECK, BST_CHECKED, 0);
                 }
             }
 
@@ -1567,7 +1698,8 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     else    
         m_deviceId = getDeviceId(m_pDevice);
 
-    BOOL rc = FindStreamFormat(m_pDevice, m_nChannels,m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, &m_waveFormat,&m_pAudioClient);
+
+    BOOL rc = FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
     if (!rc)
     {
         if (!m_wasapiExclusiveMode && !m_wasapiEnableResampling)
@@ -1583,7 +1715,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
             m_nChannels = devFormat->nChannels;
             m_nSampleRate = devFormat->nSamplesPerSec;
             CoTaskMemFree(devFormat); 
-            FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, &m_waveFormat, &m_pAudioClient);
+            FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
         }
         else
         {//go through all devices and try to find the one that works for 16/48K
@@ -1608,7 +1740,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
                 if (FAILED(hr))
                     continue;
                 CReleaser r(pMMDevice);
-                rc = FindStreamFormat(pMMDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, &m_waveFormat, &m_pAudioClient);
+                rc = FindStreamFormat(pMMDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
                 if (rc)
                 {
                     m_pDevice = pMMDevice;
@@ -1631,12 +1763,28 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     }
     else
     {
-        REFERENCE_TIME hnsDefaultPeriod = 0;       
-        hr = m_pAudioClient->GetDevicePeriod(&hnsDefaultPeriod, NULL);
-        if (FAILED(hr))
-            return false;
-        m_bufferSize = (int)((hnsDefaultPeriod * 0.0001 * m_nSampleRate * 0.001) + 0.5);
-    }    
+        if (m_wasapiLowLatencySharedMode)
+        {
+            IAudioClient3* pAudioClient3 = NULL;
+            hr = m_pAudioClient->QueryInterface(&pAudioClient3);
+            if (FAILED(hr) || !pAudioClient3) return false;
+
+            CReleaser ra3(pAudioClient3);
+            UINT32 currentPeriod;
+            WAVEFORMATEX* format = NULL;
+            hr = pAudioClient3->GetCurrentSharedModeEnginePeriod(&format, &currentPeriod);
+            if (FAILED(hr)) return false;
+            m_bufferSize = (int)currentPeriod;
+        }
+        else
+        {
+            REFERENCE_TIME hnsDefaultPeriod = 0;
+            hr = m_pAudioClient->GetDevicePeriod(&hnsDefaultPeriod, NULL);
+            if (FAILED(hr))
+                return false;
+            m_bufferSize = (int)((hnsDefaultPeriod * 0.0001 * m_nSampleRate * 0.001) + 0.5);
+        }
+    }
    
     m_active = true;
 

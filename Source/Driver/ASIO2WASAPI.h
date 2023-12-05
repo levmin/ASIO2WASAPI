@@ -180,6 +180,7 @@ private:
     bool m_useDefaultDevice;    
     AUDCLNT_SHAREMODE m_wasapiExclusiveMode = AUDCLNT_SHAREMODE_EXCLUSIVE;
     BOOL m_wasapiEnableResampling = FALSE;
+    BOOL m_wasapiLowLatencySharedMode = FALSE; 
 
     //fields filled by createBuffers()/cleaned by disposeBuffers()
     vector< vector<BYTE> > m_buffers[2];
