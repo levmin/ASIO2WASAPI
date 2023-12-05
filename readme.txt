@@ -5,6 +5,12 @@ gpl.txt - GNU Public License
 Change log:
 
 Falcosoft:
+Version 1.2.1
+
+1. Added Win10+ special low latency shared mode.
+This mode needs proper drivers. Usually proprietary vendor drivers from Realtek, NVIDIA etc. do not support low latency shared mode. But generic High Definition Audio driver from Microsoft does support it on Windows 10/11.
+2. Added version info to ASIO control panel.
+
 Version 1.2
 
 1. Added support for WASAPI shared mode
