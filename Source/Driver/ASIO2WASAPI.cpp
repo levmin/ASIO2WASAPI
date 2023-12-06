@@ -296,7 +296,7 @@ BOOL IsFormatSupported (IMMDevice* pDevice, WORD nChannels, DWORD nSampleRate, A
             bit <<= 1;
         }
     }
-    CoTaskMemFree(devFormat);
+    if (SUCCEEDED(hr)) CoTaskMemFree(devFormat);
 
 
     WAVEFORMATEX* closeMatch = NULL;
@@ -496,7 +496,7 @@ BOOL FindStreamFormat(IMMDevice* pDevice, int nChannels, int nSampleRate, int& n
             bit <<= 1;
         }
     }
-    CoTaskMemFree(devFormat);
+    if (SUCCEEDED(hr)) CoTaskMemFree(devFormat);
 
 
     WAVEFORMATEXTENSIBLE waveFormat = {0};
@@ -1711,10 +1711,13 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
             CReleaser r(pAudioClient);
                   
             WAVEFORMATEX* devFormat;
-            pAudioClient->GetMixFormat(&devFormat);
-            m_nChannels = devFormat->nChannels;
-            m_nSampleRate = devFormat->nSamplesPerSec;
-            CoTaskMemFree(devFormat); 
+            hr = pAudioClient->GetMixFormat(&devFormat);
+            if (SUCCEEDED(hr))
+            {
+                m_nChannels = devFormat->nChannels;
+                m_nSampleRate = devFormat->nSamplesPerSec;
+                CoTaskMemFree(devFormat);
+            }
             FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
         }
         else
