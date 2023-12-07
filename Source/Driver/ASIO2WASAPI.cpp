@@ -1332,7 +1332,7 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
     
     UINT32 startFrames;
     if (bufferFrameCount > (4 * pDriver->m_bufferSize))
-        startFrames = bufferFrameCount;
+        startFrames = bufferFrameCount - pDriver->m_bufferSize;
     else
         startFrames = pDriver->m_bufferSize;
 
@@ -1438,8 +1438,9 @@ void ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
 
     // Pre-load the first buffer with data
     // from the audio source before starting the stream.
-    //hr = pDriver->LoadData(pRenderClient);  //this actually adds unnecessary latency of the length of 1 buffer.     
-  
+    hr = pDriver->LoadData(pRenderClient);  //Does this actually add latency of the length of 1 buffer?     
+    RETURN_ON_ERROR(hr)
+
     hr = pAudioClient->Start();  // Start playing.
     RETURN_ON_ERROR(hr)
 
