@@ -381,6 +381,8 @@ IAudioClient* getAudioClient(IMMDevice* pDevice, WAVEFORMATEX* pWaveFormat, int&
         if (FAILED(hr)) return NULL;
         while (minPeriod < (defaultPeriod / 2)) minPeriod += fundamentalPeriod; //aim is about 5ms update period, 240 samples at 48kHz in ASIO terms 
         hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minPeriod, format, NULL);
+        if (hr == AUDCLNT_E_ENGINE_PERIODICITY_LOCKED)
+            hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, currentPeriod, format, NULL);
         CoTaskMemFree(format);
         if (FAILED(hr)) return NULL;
     }
