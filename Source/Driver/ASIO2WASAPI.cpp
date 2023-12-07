@@ -830,6 +830,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
     switch (message) 
     { 
          case WM_DESTROY:
+            if (pDriver) pDriver->m_hControlPanelHandle = 0;
             pDriver = NULL;
             deviceStringIds.clear();
             return 0;
@@ -1126,6 +1127,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
             pDriver = (ASIO2WASAPI*)lParam;
             if (!pDriver)
                 return FALSE;
+            pDriver->m_hControlPanelHandle = hwndDlg;
 #ifdef _WIN64           
             SetWindowText(hwndDlg, "ASIO2WASAPI x64");
 #else	
@@ -1597,6 +1599,7 @@ ASIOError ASIO2WASAPI::getChannels (long *numInputChannels, long *numOutputChann
 
 ASIOError ASIO2WASAPI::controlPanel()
 {   
+    if (m_hControlPanelHandle) DestroyWindow(m_hControlPanelHandle);
     DialogBoxParam(g_hinstDLL,MAKEINTRESOURCE(IDD_CONTROL_PANEL),m_hAppWindowHandle,(DLGPROC)ControlPanelProc,(LPARAM)this);
     return ASE_OK;
 }
