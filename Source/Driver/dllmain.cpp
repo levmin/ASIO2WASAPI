@@ -84,7 +84,10 @@ BOOL WINAPI DllMain(
 	
 		case DLL_PROCESS_ATTACH:
 			g_hinstDLL = hinstDLL;
-            DisableThreadLibraryCalls(hinstDLL);
+#ifndef _MT
+            DisableThreadLibraryCalls(hinstDLL); //Do not call this in case of static crt
+#endif           
+
 			hinstance = hinstDLL;
 			InitClasses(TRUE);
 			

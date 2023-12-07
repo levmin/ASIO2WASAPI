@@ -146,8 +146,8 @@ private:
     //for default device changed notification
     CMMNotificationClient* pNotificationClient;
     
-    static DWORD WINAPI PlayThreadProc(LPVOID pThis);
-    static DWORD WINAPI PlayThreadProcShared(LPVOID pThis);
+    static void PlayThreadProc(LPVOID pThis);
+    static void PlayThreadProcShared(LPVOID pThis);
     static BOOL CALLBACK ControlPanelProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam);    
     static void initInputFields(IMMDevice* pDevice, ASIO2WASAPI* pDriver, const HWND hwndDlg);
     
