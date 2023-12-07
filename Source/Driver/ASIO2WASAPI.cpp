@@ -1769,7 +1769,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
             hr = m_pAudioClient->GetDevicePeriod(&hnsDefaultPeriod, NULL);
             if (FAILED(hr))
                 return false;
-            m_bufferSize = (int)((hnsDefaultPeriod * 0.0001 * m_nSampleRate * 0.001) + 0.5);
+            m_bufferSize = (int)ceil(hnsDefaultPeriod * 0.0001 * m_nSampleRate * 0.001);
         }
     }
    
