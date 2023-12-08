@@ -174,7 +174,8 @@ private:
     IAudioClient * m_pAudioClient;
     WAVEFORMATEXTENSIBLE m_waveFormat;
     int m_bufferSize;           //in audio frames
-    HWND m_hAppWindowHandle;    
+    HWND m_hAppWindowHandle; 
+    HWND m_hControlPanelHandle;
     
     //WASAPI specific
     bool m_useDefaultDevice;    
