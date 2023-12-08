@@ -1600,7 +1600,10 @@ ASIOError ASIO2WASAPI::getChannels (long *numInputChannels, long *numOutputChann
 ASIOError ASIO2WASAPI::controlPanel()
 {   
     if (m_hControlPanelHandle) DestroyWindow(m_hControlPanelHandle);
-    DialogBoxParam(g_hinstDLL,MAKEINTRESOURCE(IDD_CONTROL_PANEL),m_hAppWindowHandle,(DLGPROC)ControlPanelProc,(LPARAM)this);
+        
+    HWND parentWindow = m_hAppWindowHandle ? m_hAppWindowHandle : GetActiveWindow();   
+    DialogBoxParam(g_hinstDLL, MAKEINTRESOURCE(IDD_CONTROL_PANEL), parentWindow, (DLGPROC)ControlPanelProc, (LPARAM)this);
+
     return ASE_OK;
 }
 
@@ -1626,6 +1629,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
 		return true;
 
     m_hAppWindowHandle = (HWND) sysRef;
+    m_hControlPanelHandle = 0;
     pNotificationClient = NULL;
 
     HRESULT hr=S_OK;
