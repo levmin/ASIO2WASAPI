@@ -1749,6 +1749,9 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
                 return false; //suitable device not found
         }
     }
+    
+    if (!m_pAudioClient)
+        return false; 
 
     if (m_wasapiExclusiveMode)
     {
