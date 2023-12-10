@@ -379,7 +379,7 @@ IAudioClient* getAudioClient(IMMDevice* pDevice, WAVEFORMATEX* pWaveFormat, int&
         hr = pAudioClient3->GetCurrentSharedModeEnginePeriod(&format, &currentPeriod);
         hr = pAudioClient3->GetSharedModeEnginePeriod(format, &defaultPeriod, &fundamentalPeriod, &minPeriod, &maxPeriod);
         if (FAILED(hr)) return NULL;
-        while (minPeriod < (defaultPeriod / 2)) minPeriod += fundamentalPeriod; //aim is about 5ms update period, 240 samples at 48kHz in ASIO terms 
+        while (minPeriod < (UINT32)(defaultPeriod * 0.4)) minPeriod += fundamentalPeriod; //4 ms update period seems to be a good compromise between latency and stability
         hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minPeriod, format, NULL);
         if (hr == AUDCLNT_E_ENGINE_PERIODICITY_LOCKED)
             hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, currentPeriod, format, NULL);
