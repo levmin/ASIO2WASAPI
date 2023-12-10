@@ -379,7 +379,10 @@ IAudioClient* getAudioClient(IMMDevice* pDevice, WAVEFORMATEX* pWaveFormat, int&
         hr = pAudioClient3->GetCurrentSharedModeEnginePeriod(&format, &currentPeriod);
         hr = pAudioClient3->GetSharedModeEnginePeriod(format, &defaultPeriod, &fundamentalPeriod, &minPeriod, &maxPeriod);
         if (FAILED(hr)) return NULL;
-        while (minPeriod < (defaultPeriod / 2)) minPeriod += fundamentalPeriod; //aim is about 5ms update period, 240 samples at 48kHz in ASIO terms 
+        
+        UINT32 buffsizeInSamples = (UINT32)(bufferSize * (format->nSamplesPerSec * 0.001));
+        while (minPeriod < (UINT32)(buffsizeInSamples * 0.44)) minPeriod += fundamentalPeriod; //derive update period from given buffer size (that cannot be set directly in low latency mode, but it seems to be 2.2 * update period)
+        if (minPeriod > maxPeriod) minPeriod = maxPeriod;
         hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minPeriod, format, NULL);
         if (hr == AUDCLNT_E_ENGINE_PERIODICITY_LOCKED)
             hr = pAudioClient3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, currentPeriod, format, NULL);
@@ -1600,7 +1603,10 @@ ASIOError ASIO2WASAPI::getChannels (long *numInputChannels, long *numOutputChann
 ASIOError ASIO2WASAPI::controlPanel()
 {   
     if (m_hControlPanelHandle) DestroyWindow(m_hControlPanelHandle);
-    DialogBoxParam(g_hinstDLL,MAKEINTRESOURCE(IDD_CONTROL_PANEL),m_hAppWindowHandle,(DLGPROC)ControlPanelProc,(LPARAM)this);
+        
+    HWND parentWindow = m_hAppWindowHandle ? m_hAppWindowHandle : GetActiveWindow();   
+    DialogBoxParam(g_hinstDLL, MAKEINTRESOURCE(IDD_CONTROL_PANEL), parentWindow, (DLGPROC)ControlPanelProc, (LPARAM)this);
+
     return ASE_OK;
 }
 
@@ -1626,6 +1632,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
 		return true;
 
     m_hAppWindowHandle = (HWND) sysRef;
+    m_hControlPanelHandle = 0;
     pNotificationClient = NULL;
 
     HRESULT hr=S_OK;
