@@ -5,6 +5,19 @@ gpl.txt - GNU Public License
 Change log:
 
 Falcosoft:
+Version 1.2.3
+
+1. Low latency shared mode buffer size can be configured (and needed update period is derived from buffer size).
+2. Added workaround for hosts that do not set control panel dialog's parent window correctly.
+3. Fixed problems with non-standard sample rates (e.g. 49716). When shared mode format converter is used actually any sample rates can be used now.
+4. Other minor fixes.
+
+Version 1.2.2
+
+1. Fixed speaker order in case of some frequently used speaker setups.
+2. Added proper latency report in case of shared mode.
+3. Other minor fixes.
+
 Version 1.2.1
 
 1. Added Win10+ special low latency shared mode.
