@@ -145,7 +145,7 @@ public:
 private:   
     //for default device changed notification
     CMMNotificationClient* pNotificationClient = NULL;
-    HANDLE eventDrivenEvent = NULL;   
+    HANDLE m_hCallbackEvent = NULL;   
     
     static void PlayThreadProc(LPVOID pThis);
     static void PlayThreadProcShared(LPVOID pThis);
