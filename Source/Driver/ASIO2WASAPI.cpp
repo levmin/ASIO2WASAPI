@@ -694,12 +694,12 @@ ASIO2WASAPI::ASIO2WASAPI (LPUNKNOWN pUnk, HRESULT *phr)
 	: CUnknown("ASIO2WASAPI", pUnk, phr)
 {
     clearState();
-    readFromRegistry(); 
+    readFromRegistry();   
 }
 
 ASIO2WASAPI::~ASIO2WASAPI ()
 {
-    shutdown();
+    shutdown();    
 }
 
 void ASIO2WASAPI::shutdown()
@@ -707,7 +707,7 @@ void ASIO2WASAPI::shutdown()
     IMMDeviceEnumerator* pEnumerator = NULL;    
     HRESULT hr = S_OK;
     
-    stop();
+    //stop(); rdundant disposeuffers calls stop()
 	disposeBuffers();
     
     HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -732,7 +732,12 @@ void ASIO2WASAPI::shutdown()
         delete(pNotificationClient);
         pNotificationClient = NULL;
     }
-   
+
+    if (eventDrivenEvent)
+    {
+        CloseHandle(eventDrivenEvent);
+        eventDrivenEvent = NULL;
+    }   
 }
 
 void ASIO2WASAPI::initInputFields(IMMDevice* pDevice, ASIO2WASAPI* pDriver, const HWND hwndDlg)
@@ -1308,15 +1313,15 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
     BYTE* pData = NULL;
 
     hr = CoInitialize(NULL);
-    RETURN_ON_ERROR(hr)
-
-        // Create an event handle and register it for
-        // buffer-event notifications.
-        HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-    CHandleCloser cl(hEvent);
-
-    hr = pAudioClient->SetEventHandle(hEvent);
-    RETURN_ON_ERROR(hr)
+    RETURN_ON_ERROR(hr)    
+   
+    if (!pDriver->eventDrivenEvent)// In Cubase 5 multiple start/stop cycles can occur without releasing AudioClient. And in shared mode AudioClient->SetEventHandle fails the 2nd time. So private eventDrivenEvent added as a global event.
+    {
+        pDriver->eventDrivenEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+        hr = pAudioClient->SetEventHandle(pDriver->eventDrivenEvent);
+        RETURN_ON_ERROR(hr)
+    }
+    if (pDriver->eventDrivenEvent) ResetEvent(pDriver->eventDrivenEvent); //make sure event is not signaled AudioClient start is called
 
     hr = pAudioClient->GetService(
             IID_IAudioRenderClient,
@@ -1334,7 +1339,9 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
     // Pre-load the first buffer with data  
    
     UINT32 bufferFrameCount;
+    UINT32 numFramesPadding;
     hr = pAudioClient->GetBufferSize(&bufferFrameCount);
+    hr = pAudioClient->GetCurrentPadding(&numFramesPadding);
     RETURN_ON_ERROR(hr)
     
     UINT32 startFrames;
@@ -1342,6 +1349,8 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
         startFrames = bufferFrameCount - pDriver->m_bufferSize;
     else
         startFrames = pDriver->m_bufferSize;
+
+    if (startFrames > (bufferFrameCount - numFramesPadding)) startFrames = bufferFrameCount - numFramesPadding;
 
     hr = pRenderClient->GetBuffer(startFrames, &pData);
     RETURN_ON_ERROR(hr)
@@ -1361,12 +1370,11 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
     //char convTxt[11] = { 0 };
 
     DWORD retval = 0;
-    HANDLE events[2] = { pDriver->m_hStopPlayThreadEvent, hEvent };
+    HANDLE events[2] = { pDriver->m_hStopPlayThreadEvent, pDriver->eventDrivenEvent };
     while ((retval = WaitForMultipleObjects(2, events, FALSE, INFINITE)) == (WAIT_OBJECT_0 + 1))
     {//the hEvent is signalled and m_hStopPlayThreadEvent is not
-        // Grab the next empty buffer from the audio device.    
-            
-        UINT32 numFramesPadding;
+        // Grab the next empty buffer from the audio device.   
+       
         hr = pAudioClient->GetCurrentPadding(&numFramesPadding);
         if (pDriver->m_bufferSize > (int)(bufferFrameCount - numFramesPadding))
         {           
@@ -1422,13 +1430,13 @@ void ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
     hr = CoInitialize(NULL);
     RETURN_ON_ERROR(hr)
 
-    // Create an event handle and register it for
-    // buffer-event notifications.
-    HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-    CHandleCloser cl(hEvent);
-
-    hr = pAudioClient->SetEventHandle(hEvent);
-    RETURN_ON_ERROR(hr)
+    if (!pDriver->eventDrivenEvent) // In Cubase 5 multiple start/stop cycles can occur without releasing AudioClient. And in shared mode AudioClient->SetEventHandle fails the 2nd time. So private eventDrivenEvent added as a global event.
+    {
+        pDriver->eventDrivenEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+        hr = pAudioClient->SetEventHandle(pDriver->eventDrivenEvent);
+        RETURN_ON_ERROR(hr)
+    }
+    if (pDriver->eventDrivenEvent) ResetEvent(pDriver->eventDrivenEvent); //make sure event is not signaled AudioClient start is called 
 
     hr = pAudioClient->GetService(
                          IID_IAudioRenderClient,
@@ -1472,7 +1480,7 @@ void ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
     //char convTxt[11] = { 0 };
     
     DWORD retval = 0;
-    HANDLE events[2] = {pDriver->m_hStopPlayThreadEvent, hEvent };
+    HANDLE events[2] = {pDriver->m_hStopPlayThreadEvent, pDriver->eventDrivenEvent };
     while ((retval  = WaitForMultipleObjects(2,events,FALSE, INFINITE)) == (WAIT_OBJECT_0 + 1))
     {//the hEvent is signalled and m_hStopPlayThreadEvent is not
         // Grab the next empty buffer from the audio device.
@@ -1634,6 +1642,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     m_hAppWindowHandle = (HWND) sysRef;
     m_hControlPanelHandle = 0;
     pNotificationClient = NULL;
+    eventDrivenEvent = NULL;   
 
     HRESULT hr=S_OK;
     IMMDeviceEnumerator *pEnumerator = NULL;
@@ -1696,25 +1705,21 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     BOOL rc = FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
     if (!rc)
     {
-        if (!m_wasapiExclusiveMode && !m_wasapiEnableResampling)
+        IAudioClient* pAudioClient = NULL;
+        hr = m_pDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
+        CReleaser r(pAudioClient);
+
+        WAVEFORMATEX* devFormat;
+        hr = pAudioClient->GetMixFormat(&devFormat);
+        if (SUCCEEDED(hr))
         {
-            IAudioClient* pAudioClient = NULL;
-            hr = m_pDevice->Activate(
-                IID_IAudioClient, CLSCTX_ALL,
-                NULL, (void**)&pAudioClient);
-            CReleaser r(pAudioClient);
-                  
-            WAVEFORMATEX* devFormat;
-            hr = pAudioClient->GetMixFormat(&devFormat);
-            if (SUCCEEDED(hr))
-            {
-                m_nChannels = devFormat->nChannels;
-                m_nSampleRate = devFormat->nSamplesPerSec;
-                CoTaskMemFree(devFormat);
-            }
-            FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
-        }
-        else
+           m_nChannels = !m_wasapiExclusiveMode ? devFormat->nChannels : 2;
+           m_nSampleRate = devFormat->nSamplesPerSec;
+           CoTaskMemFree(devFormat);
+           rc = FindStreamFormat(m_pDevice, m_nChannels, m_nSampleRate, m_nBufferSize, m_wasapiExclusiveMode, m_wasapiEnableResampling, m_wasapiLowLatencySharedMode, &m_waveFormat, &m_pAudioClient);
+        }        
+
+        if (!rc)
         {//go through all devices and try to find the one that works for 16/48K
             SAFE_RELEASE(m_pDevice)
                 setMostReliableFormat();
@@ -1815,23 +1820,25 @@ ASIOError ASIO2WASAPI::setSampleRate (ASIOSampleRate sampleRate)
 
     ASIOError err = canSampleRate(sampleRate);
     if (err != ASE_OK)
-        return err;
+        return err;    
     
-    int nPrevSampleRate = m_nSampleRate;
-    m_nSampleRate = (int)sampleRate;
-    writeToRegistry();
     if (m_callbacks)
     {//ask the host ro reset us
+        int nPrevSampleRate = m_nSampleRate;
+        m_nSampleRate = (int)sampleRate;
+        writeToRegistry();
         m_nSampleRate = nPrevSampleRate;
-        m_callbacks->asioMessage(kAsioResetRequest,0,NULL,NULL);
+        m_callbacks->asioMessage(kAsioResetRequest, 0, NULL, NULL);
     }
-    else
+    else return ASE_NoClock;
+    /* In case of Cubase 5 getBufferSize has been called at this point and buffersize can change due to AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED which results in failed createBuffers thus no sound at all.  
     {//reinitialize us with the new sample rate
         HWND hAppWindowHandle = m_hAppWindowHandle;
         shutdown();
         readFromRegistry();
         init(hAppWindowHandle);
     }
+    */
     
     return ASE_OK;
 }

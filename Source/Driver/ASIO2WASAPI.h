@@ -144,7 +144,8 @@ public:
     void setUseDefaultDevice(bool value) { m_useDefaultDevice = value; };
 private:   
     //for default device changed notification
-    CMMNotificationClient* pNotificationClient;
+    CMMNotificationClient* pNotificationClient = NULL;
+    HANDLE eventDrivenEvent = NULL;   
     
     static void PlayThreadProc(LPVOID pThis);
     static void PlayThreadProcShared(LPVOID pThis);
@@ -178,7 +179,7 @@ private:
     HWND m_hControlPanelHandle;
     
     //WASAPI specific
-    bool m_useDefaultDevice;    
+    bool m_useDefaultDevice = true;    
     AUDCLNT_SHAREMODE m_wasapiExclusiveMode = AUDCLNT_SHAREMODE_EXCLUSIVE;
     BOOL m_wasapiEnableResampling = FALSE;
     BOOL m_wasapiLowLatencySharedMode = FALSE; 
