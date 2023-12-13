@@ -1146,6 +1146,8 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 #endif	
             wchar_t fileversionBuff[32] = { 0 }; ;
             SetWindowTextW(GetDlgItem(hwndDlg, IDC_VERSIONINFO), GetFileVersion(fileversionBuff));
+
+           
             
             HWND hwndOwner = 0;
             RECT rcOwner, rcDlg, rc;
@@ -1165,8 +1167,8 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 
             SetWindowPos(hwndDlg,
                 HWND_TOPMOST,
-                rcOwner.left + (rc.right / 2),
-                rcOwner.top + (rc.bottom / 2),
+                max(0, rcOwner.left + (rc.right / 2)),
+                max(0, rcOwner.top + (rc.bottom / 2)),
                 0, 0,
                 SWP_NOSIZE);
 
