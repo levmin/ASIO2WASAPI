@@ -428,7 +428,7 @@ IAudioClient* getAudioClient(IMMDevice* pDevice, WAVEFORMATEX* pWaveFormat, int&
             SAFE_RELEASE(pAudioClient);
             hr = pDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pAudioClient);
             if (FAILED(hr) || !pAudioClient)
-                return false;
+                return NULL;
             r.reset(pAudioClient);
             hr = pAudioClient->Initialize(
                 shareMode,
@@ -691,7 +691,7 @@ void ASIO2WASAPI::clearState()
 }
 
 ASIO2WASAPI::ASIO2WASAPI (LPUNKNOWN pUnk, HRESULT *phr)
-	: CUnknown("ASIO2WASAPI", pUnk, phr)
+	: CUnknown((TCHAR*)"ASIO2WASAPI", pUnk, phr)
 {
     clearState();
     readFromRegistry();   
@@ -1921,71 +1921,57 @@ ASIOError ASIO2WASAPI::disposeBuffers()
     return ASE_OK;
 }
 
-ASIOError ASIO2WASAPI::getChannelInfo (ASIOChannelInfo *info)
+ASIOError ASIO2WASAPI::getChannelInfo(ASIOChannelInfo* info)
 {
     if (!m_active)
         return ASE_NotPresent;
 
-    if (info->channel < 0 || info->channel >=m_nChannels ||  info->isInput)
-		return ASE_InvalidParameter;
+    if (info->channel < 0 || info->channel >= m_nChannels || info->isInput)
+        return ASE_InvalidParameter;
 
     info->type = getASIOSampleType();
     info->channelGroup = 0;
-    info->isActive = (m_buffers[0].size() > 0) ? ASIOTrue:ASIOFalse;
-    const char* knownChannelNames[] =
-    {
-        "Front left",
-        "Front right",
-        "Front center",
-        "Low frequency",
-        "Back left",
-        "Back right",
-        "Front left of center",
-        "Front right of center",
-        "Back center",
-        "Side left",
-        "Side right",
-        "Top center",
-        "Top front left",
-        "Top front center",
-        "Top front right",
-        "Top back left",
-        "Top back center",
-        "Top back right"
-    };
+    info->isActive = (m_buffers[0].size() > 0) ? ASIOTrue : ASIOFalse;
 
-    if (info->channel < sizeof(knownChannelNames) / sizeof(knownChannelNames[0]))
+    vector<UINT32> speakerBits;
+    speakerBits.reserve(18);
+    for (UINT32 i = 0; i < 18; i++)
     {
-        if (m_waveFormat.dwChannelMask == KSAUDIO_SPEAKER_QUAD)
-        {
-            switch (info->channel)
-            {
-            case 2: strcpy_s(info->name, sizeof(info->name), knownChannelNames[4]); break;
-            case 3: strcpy_s(info->name, sizeof(info->name), knownChannelNames[5]); break;
-            default: strcpy_s(info->name, sizeof(info->name), knownChannelNames[info->channel]); break;
-            }
-        }
-        else if (m_waveFormat.dwChannelMask == KSAUDIO_SPEAKER_5POINT1_SURROUND)
-        {
-            switch (info->channel)
-            {
-            case 4: strcpy_s(info->name, sizeof(info->name), knownChannelNames[9]); break;
-            case 5: strcpy_s(info->name, sizeof(info->name), knownChannelNames[10]); break;
-            default: strcpy_s(info->name, sizeof(info->name), knownChannelNames[info->channel]); break;
-            }
-        }
-        else if (m_waveFormat.dwChannelMask == KSAUDIO_SPEAKER_7POINT1_SURROUND)
-        {
-            switch (info->channel)
-            {
-            case 6: strcpy_s(info->name, sizeof(info->name), knownChannelNames[9]); break;
-            case 7: strcpy_s(info->name, sizeof(info->name), knownChannelNames[10]); break;
-            default: strcpy_s(info->name, sizeof(info->name), knownChannelNames[info->channel]); break;
-            }
-        }
-        else
-            strcpy_s(info->name, sizeof(info->name), knownChannelNames[info->channel]);
+        UINT32 testedBit = 1 << i;
+        if (m_waveFormat.dwChannelMask & testedBit) speakerBits.push_back(testedBit);
+        if (speakerBits.size() == m_nChannels) break;
+    }
 
+    const char* speakerName = NULL;
+
+    if (info->channel < speakerBits.size())
+    {
+        switch (speakerBits[info->channel])
+        {
+        case SPEAKER_FRONT_LEFT: speakerName = "Front Left"; break;
+        case SPEAKER_FRONT_RIGHT: speakerName = "Front Right"; break;
+        case SPEAKER_FRONT_CENTER: speakerName = "Front Center"; break;
+        case SPEAKER_LOW_FREQUENCY: speakerName = "Low Frequency"; break;
+        case SPEAKER_BACK_LEFT: speakerName = "Back Left"; break;
+        case SPEAKER_BACK_RIGHT: speakerName = "Back Right"; break;
+        case SPEAKER_FRONT_LEFT_OF_CENTER: speakerName = "Front Left Center"; break;
+        case SPEAKER_FRONT_RIGHT_OF_CENTER: speakerName = "Front Right Center"; break;
+        case SPEAKER_BACK_CENTER: speakerName = "Back Center"; break;
+        case SPEAKER_SIDE_LEFT: speakerName = "Side Left"; break;
+        case SPEAKER_SIDE_RIGHT: speakerName = "Side Right"; break;
+        case SPEAKER_TOP_CENTER: speakerName = "Top Center"; break;
+        case SPEAKER_TOP_FRONT_LEFT: speakerName = "Top Front Left"; break;
+        case SPEAKER_TOP_FRONT_CENTER: speakerName = "Top Front Center"; break;
+        case SPEAKER_TOP_FRONT_RIGHT: speakerName = "Top Front Right"; break;
+        case SPEAKER_TOP_BACK_LEFT: speakerName = "Top Back left"; break;
+        case SPEAKER_TOP_BACK_CENTER: speakerName = "Top Back Center"; break;
+        case SPEAKER_TOP_BACK_RIGHT: speakerName = "Top Back Right"; break;
+        }
+    }
+
+    if (speakerName)
+    {
+        strcpy_s(info->name, sizeof(info->name), speakerName);
     }
     else
     {
