@@ -1106,7 +1106,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
                         {
                             char msgTxt[64] = "Closest valid buffer size seems to be ";
                             char convTxt[10] = { 0 };
-                            strcat_s(msgTxt, itoa(nBufferSize, convTxt, 10));
+                            strcat_s(msgTxt, _itoa(nBufferSize, convTxt, 10));
                             strcat_s(msgTxt, " ms.");
                             MessageBox(hwndDlg, msgTxt, szDescription, MB_OK | MB_ICONINFORMATION);
                         }
@@ -1180,7 +1180,7 @@ BOOL CALLBACK ASIO2WASAPI::ControlPanelProc(HWND hwndDlg,
 
             IMMDeviceEnumerator *pEnumerator = NULL;
             DWORD flags = 0;
-            CoInitialize(NULL);
+            std::ignore = CoInitialize(NULL);
 
             HRESULT hr = CoCreateInstance(
                    CLSID_MMDeviceEnumerator, NULL,
@@ -1351,7 +1351,7 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
     RETURN_ON_ERROR(hr)
     
     UINT32 startFrames;
-    if (bufferFrameCount > (4 * pDriver->m_bufferSize))
+    if (bufferFrameCount > (UINT32)(4 * pDriver->m_bufferSize))
         startFrames = bufferFrameCount - pDriver->m_bufferSize;
     else
         startFrames = pDriver->m_bufferSize;
@@ -1390,7 +1390,7 @@ void ASIO2WASAPI::PlayThreadProcShared(LPVOID pThis)
         hr = pDriver->LoadData(pRenderClient);
         if (hr != S_OK && hr != AUDCLNT_E_BUFFER_ERROR)
         {
-            //OutputDebugString(itoa(hr, convTxt, 10));
+            //OutputDebugString(_itoa(hr, convTxt, 10));
             pDriver->m_callbacks->asioMessage(kAsioResetRequest, 0, NULL, NULL);
             break;
         }
@@ -1497,7 +1497,7 @@ void ASIO2WASAPI::PlayThreadProc(LPVOID pThis)
         LARGE_INTEGER tmpCounter = { 0 };
         QueryPerformanceCounter(&tmpCounter);
         endTime = (DWORD)round((tmpCounter.QuadPart - startTime.QuadPart) * queryPerformanceUnit);
-        //OutputDebugString(itoa(endTime, convTxt, 10));
+        //OutputDebugString(_itoa(endTime, convTxt, 10));
 
         if (endTime > normalInterval)
             counter++;
@@ -1655,7 +1655,7 @@ ASIOBool ASIO2WASAPI::init(void* sysRef)
     IMMDeviceEnumerator *pEnumerator = NULL;
     DWORD flags = 0;
 
-    CoInitialize(NULL);
+    std::ignore = CoInitialize(NULL);
 
     hr = CoCreateInstance(
            CLSID_MMDeviceEnumerator, NULL,
@@ -1934,8 +1934,8 @@ ASIOError ASIO2WASAPI::getChannelInfo(ASIOChannelInfo* info)
     info->isActive = (m_buffers[0].size() > 0) ? ASIOTrue : ASIOFalse;
 
     vector<UINT32> speakerBits;
-    speakerBits.reserve(18);
-    for (UINT32 i = 0; i < 18; i++)
+    speakerBits.reserve(m_nChannels);
+    for (UINT32 i = 0; i < KNOWN_SPEAKERNAMES; i++)
     {
         UINT32 testedBit = 1 << i;
         if (m_waveFormat.dwChannelMask & testedBit) speakerBits.push_back(testedBit);
@@ -1944,7 +1944,7 @@ ASIOError ASIO2WASAPI::getChannelInfo(ASIOChannelInfo* info)
 
     const char* speakerName = NULL;
 
-    if (info->channel < speakerBits.size())
+    if (info->channel < (long)speakerBits.size())
     {
         switch (speakerBits[info->channel])
         {
@@ -1977,7 +1977,7 @@ ASIOError ASIO2WASAPI::getChannelInfo(ASIOChannelInfo* info)
     {
         char unknownTxt[12] = "Unknown ";
         char convTxt[12] = { 0 };
-        strncat_s(unknownTxt, itoa(info->channel, convTxt, 10), 3);
+        strncat_s(unknownTxt, _itoa(info->channel, convTxt, 10), 3);
         strcpy_s(info->name, sizeof(info->name), unknownTxt);
     }
 

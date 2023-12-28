@@ -19,7 +19,8 @@
 */
 
 #pragma once
-#pragma warning(disable : 4996)
+#pragma warning(disable : 4996) // disable crt secure warnings
+#pragma warning(disable : 26812) // disable ASIO enum warnings
 
 #include <vector>
 using namespace std;
@@ -29,6 +30,8 @@ using namespace std;
 struct IMMDevice;
 struct IAudioClient;
 struct IAudioRenderClient;
+
+#define KNOWN_SPEAKERNAMES   18       
 
 #define SAFE_RELEASE(punk)  \
               if ((punk) != NULL)  \
@@ -153,7 +156,7 @@ private:
     static void initInputFields(IMMDevice* pDevice, ASIO2WASAPI* pDriver, const HWND hwndDlg);
     
     HRESULT LoadData(IAudioRenderClient * pRenderClient);    
-    long refTimeToBufferSize(LONGLONG time) const;
+    long refTimeToBufferSize(REFERENCE_TIME time) const;
     LONGLONG bufferSizeToRefTime(long bufferSize) const;    
     void writeToRegistry();
     void readFromRegistry();
