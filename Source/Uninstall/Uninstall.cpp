@@ -19,6 +19,7 @@
 */
 
 #include "stdafx.h"
+#include <shlwapi.h>
 
 using namespace std;
 
@@ -46,7 +47,7 @@ BOOL IsWow64()
     }
     return bIsWow64;
 }
-
+#pragma comment(lib,"Shlwapi.lib")  
 int UnregisterDLLs(string installFolder, const char ** names, int nNumberOfDlls)
 {
    AddTrailingSeparator(installFolder);
@@ -54,6 +55,11 @@ int UnregisterDLLs(string installFolder, const char ** names, int nNumberOfDlls)
    for (int index=0;index<nNumberOfDlls;index++)
    {
       string dllName=installFolder+names[index];
+      if (!PathFileExists(dllName.c_str()))
+      {
+          MessageBox(NULL, "It seems that ASIO2WASAPI is not installed.", "ASIO2WASAPI UnInstaller", MB_OK | MB_ICONWARNING);
+          return -1;
+      }
       string commandLine = " /u /s \"" + dllName + "\"";
       ShellExecute(NULL,NULL,"regsvr32.exe",commandLine.c_str(),NULL,SW_HIDE);
    }
@@ -87,10 +93,10 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int)
       return -1;
    if (IsWow64())
    {
-      const char * names[]={
+      const char * names64[]={
          "ASIO2WASAPI64.dll",
       };
-      if (UnregisterDLLs(installFolder64,names,sizeof(names)/sizeof(names[0])))
+      if (UnregisterDLLs(installFolder64, names64,sizeof(names64)/sizeof(names64[0])))
          return -1;
    }
    
@@ -115,7 +121,7 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int)
 		fputs(("rd /s /q \""+installFolder64+"\"\n").c_str(),f);
     fputs(("del \""+tmpDir+"finish_cleanup.bat\"\n").c_str(),f);
 	fclose(f);
-	ShellExecute(NULL, NULL, tmpBatFile.c_str(), NULL, NULL, SW_HIDE);
-
+	HINSTANCE result = ShellExecute(NULL, NULL, tmpBatFile.c_str(), NULL, NULL, SW_HIDE);
+    if ((INT_PTR)result > 32) MessageBox(NULL, "ASIO2WASAPI is successfully uninstalled", "ASIO2WASAPI UnInstaller", MB_OK | MB_ICONINFORMATION);
 	return 0;
 }

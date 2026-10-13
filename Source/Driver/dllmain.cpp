@@ -1,5 +1,6 @@
 /*  ASIO2WASAPI Universal ASIO Driver
     Copyright (C) Lev Minkovsky
+    Copyright (C) Zoltan Bacsko (Falcosoft) 2023-2026
     
     This file is part of ASIO2WASAPI.
 
@@ -54,7 +55,7 @@ private:
 
     static int m_cLocked;
 public:
-    CClassFactory(const CFactoryTemplate *);
+    explicit CClassFactory(const CFactoryTemplate *);
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void ** ppv);

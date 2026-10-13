@@ -1,0 +1,51 @@
+name: CodeQL
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - '**/*.mrc'
+      - '**/*.png'
+      - '**/*.svg'
+
+env:
+  # Path to the solution file relative to the root of the project.
+  SOLUTION_FILE_PATH: Source\ASIO2WASAPI.sln
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+  
+jobs:
+  Analyze:
+    runs-on: windows-2019
+
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build debuggable x64 
+        working-directory: ${{ github.workspace }}
+        run: msbuild /m /p:Configuration="Debug" /p:Platform="x64" /p:PlatformToolset=v142 ${{ env.SOLUTION_FILE_PATH }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

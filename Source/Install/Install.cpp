@@ -60,7 +60,7 @@ int CopyFiles(string installFolder, const char * * names, int nNumberOfNames)
           || (attr=GetFileAttributes(fileName.c_str())==INVALID_FILE_ATTRIBUTES)
           || !SetFileAttributes(fileName.c_str(),attr & ~FILE_ATTRIBUTE_READONLY))
 	      {
-            MessageBox(NULL,(string("Copy operation failed for ")+names[i]).c_str(),NULL,MB_OK);
+            MessageBox(NULL,(string("Copy operation failed for ")+names[i]).c_str(), "ASIO2WASAPI Installer", MB_OK | MB_ICONERROR);
 		      return -1;
 	      }
       
@@ -105,7 +105,7 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int)
 {
 	if (!IsWindowsVistaOrGreater())
    {
-      MessageBox(NULL,"ASIO2WASAPI required Windows Vista or later","ASIO2WASAPI Installer",MB_OK);
+      MessageBox(NULL,"ASIO2WASAPI required Windows Vista or later","ASIO2WASAPI Installer", MB_OK | MB_ICONERROR);
       return -1;
    }
    //set current directory to be the one of install.exe
@@ -168,7 +168,7 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int)
       };
    for (int i=0; i<sizeof(values)/sizeof(values[0]); i++)
       RegSetValueEx(key,values[i].pValueName,0,REG_SZ,(const BYTE *)values[i].pValueData,strlen(values[i].pValueData)+1);
-   MessageBox(NULL,"ASIO2WASAPI is successfully installed","ASIO2WASAPI Installer",MB_OK);
+   MessageBox(NULL,"ASIO2WASAPI is successfully installed.","ASIO2WASAPI Installer", MB_OK | MB_ICONINFORMATION);
    return 0;
 }
 

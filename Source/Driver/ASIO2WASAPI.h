@@ -1,5 +1,6 @@
 /*  ASIO2WASAPI Universal ASIO Driver
     Copyright (C) Lev Minkovsky
+    Copyright (C) Zoltan Bacsko (Falcosoft) 2023-2026
     
     This file is part of ASIO2WASAPI.
 
@@ -23,6 +24,7 @@
 #pragma warning(disable : 26812) // disable ASIO enum warnings
 
 #include <vector>
+#include "CaptureBuffer.h"
 using namespace std;
 #ifndef _INC_MMREG
     #include <MMReg.h> // needed for WAVEFORMATEXTENSIBLE
@@ -55,7 +57,7 @@ class CMMNotificationClient : public IMMNotificationClient
     ASIO2WASAPI* _asio2Wasapi;
 
 public:
-    CMMNotificationClient(ASIO2WASAPI* asio2Wasapi);
+    explicit CMMNotificationClient(ASIO2WASAPI* asio2Wasapi);
 
     ~CMMNotificationClient();
 
@@ -143,6 +145,7 @@ public:
 	ASIOError outputReady ();
 
 /// WASAPI specific
+    bool getUseDefaultInputDevice() const { return m_inputEnabled && m_inputDeviceId.empty(); };
     bool getUseDefaultDevice() { return m_useDefaultDevice; };
     void setUseDefaultDevice(bool value) { m_useDefaultDevice = value; };
 private:   
@@ -150,18 +153,26 @@ private:
     CMMNotificationClient* pNotificationClient = NULL;
     HANDLE m_hCallbackEvent = NULL;   
     
+    static unsigned __stdcall AudioThreadProc(void* pThis);
+    static void DuplexThreadProc(LPVOID pThis);
     static void PlayThreadProc(LPVOID pThis);
     static void PlayThreadProcShared(LPVOID pThis);
     static BOOL CALLBACK ControlPanelProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam);    
     static void initInputFields(IMMDevice* pDevice, ASIO2WASAPI* pDriver, const HWND hwndDlg);
+    static void updateLowLatencyAvailability(ASIO2WASAPI* pDriver, HWND hwndDlg,
+        const vector< vector<wchar_t> >& deviceIds, const vector< vector<wchar_t> >& inputDeviceIds);
     
-    HRESULT LoadData(IAudioRenderClient * pRenderClient);    
+    HRESULT LoadData(IAudioRenderClient * pRenderClient);
+    HRESULT DrainCapture(IAudioCaptureClient* pCaptureClient);
+    void SwitchInputBuffer(int index);
+    bool initCaptureDevice(IMMDeviceEnumerator* pEnumerator);
     long refTimeToBufferSize(REFERENCE_TIME time) const;
-    LONGLONG bufferSizeToRefTime(long bufferSize) const;    
+    LONGLONG bufferSizeToRefTime(long bufferSize) const;
+    void updateFormatDiagnostics(HWND dialog) const;
     void writeToRegistry();
     void readFromRegistry();
     void shutdown();   
-    ASIOSampleType getASIOSampleType() const;    
+    ASIOSampleType getASIOSampleType(bool input = false) const;
     void clearState();
     void setMostReliableFormat();
 
@@ -171,11 +182,19 @@ private:
     int m_nBufferSize;
     char m_errorMessage[128];
     vector<wchar_t> m_deviceId;
+    bool m_inputEnabled = false;
+    BOOL m_preferCommonFormat = FALSE;
+    vector<wchar_t> m_inputDeviceId;
     
     //fields filled by init()/cleaned by shutdown()
     bool m_active;
     IMMDevice * m_pDevice;
     IAudioClient * m_pAudioClient;
+    IMMDevice* m_pInputDevice;
+    IAudioClient* m_pCaptureAudioClient;
+    WAVEFORMATEXTENSIBLE m_inputWaveFormat;
+    int m_nInputChannels;
+    HANDLE m_hCaptureEvent = NULL;
     WAVEFORMATEXTENSIBLE m_waveFormat;
     int m_bufferSize;           //in audio frames
     HWND m_hAppWindowHandle; 
@@ -189,10 +208,18 @@ private:
 
     //fields filled by createBuffers()/cleaned by disposeBuffers()
     vector< vector<BYTE> > m_buffers[2];
+    vector< vector<BYTE> > m_inputBuffers[2];
+    CaptureBuffer m_captureBuffer;
+    bool m_hasInputBuffers;
+    bool m_hasOutputBuffers;
+    bool m_capturePrimed;
     ASIOCallbacks* m_callbacks;
 
     //fields filled by start()/cleaned by stop()
-    HANDLE m_hPlayThreadIsRunningEvent;
+    HANDLE m_hPlayThread;
+    unsigned m_playThreadId;
+    HANDLE m_hThreadStartedEvent = NULL;
+    HRESULT m_threadStartResult = E_FAIL;
     int m_bufferIndex;
     HANDLE m_hStopPlayThreadEvent;
     ASIOTimeStamp m_theSystemTime;

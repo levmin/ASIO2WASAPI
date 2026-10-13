@@ -51,7 +51,7 @@ class CBaseObject
 
 public:
 
-    CBaseObject(TCHAR *pName);
+    explicit CBaseObject(TCHAR *pName);
     ~CBaseObject();
 
     static LONG ObjectsActive() {

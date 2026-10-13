@@ -1,5 +1,6 @@
 /*  ASIO2WASAPI Universal ASIO Driver
     Copyright (C) Lev Minkovsky
+	Copyright (C) Zoltan Bacsko (Falcosoft) 2023-2026
     
     This file is part of ASIO2WASAPI.
 
@@ -185,10 +186,10 @@ LONG UnregisterAsioDriver (CLSID clsid,const char *szDllPathName,const char *szr
 static LONG findRegPath (HKEY mainkey,const char *szregpath)
 {
 	HKEY	hkey;
-	LONG 	cr,rc = -1;
+	LONG 	rc = -1;
 	
 	if (szregpath) {
-		if ((cr = RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
+		if ((RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
 			RegCloseKey(hkey);
 			rc = 1;
 		}
@@ -206,8 +207,8 @@ static LONG createRegPath (HKEY mainkey,const char *szregpath,const char *sznewp
 	
 	sprintf(newregpath,"%s\\%s",szregpath,sznewpath);
 	if (!(cr = findRegPath(mainkey,newregpath))) {
-		if ((cr = RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
-			if ((cr = RegCreateKey(hkey,sznewpath,&hksub)) == ERROR_SUCCESS) {
+		if ((RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
+			if ((RegCreateKey(hkey,sznewpath,&hksub)) == ERROR_SUCCESS) {
 				RegCloseKey(hksub);
 				rc = 0;
 			}
@@ -221,12 +222,12 @@ static LONG createRegPath (HKEY mainkey,const char *szregpath,const char *sznewp
 
 static LONG createRegStringValue (HKEY mainkey,const char *szregpath,const char *valname,const char *szvalstr)
 {
-	LONG	cr,rc = -1;
+	LONG	rc = -1;
 	HKEY	hkey;
 
 	if (szregpath) {
-		if ((cr = RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
-			cr = RegSetValueEx(hkey,(LPCTSTR)valname,0,REG_SZ,(const BYTE *)szvalstr,(DWORD)strlen(szvalstr));
+		if ((RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
+			LONG cr = RegSetValueEx(hkey,(LPCTSTR)valname,0,REG_SZ,(const BYTE *)szvalstr,(DWORD)strlen(szvalstr));
 			RegCloseKey(hkey);
 			if (cr == ERROR_SUCCESS) rc = 0;
 		}
@@ -239,15 +240,15 @@ static LONG createRegStringValue (HKEY mainkey,const char *szregpath,const char 
 static LONG getRegString (HKEY mainkey,const char *szregpath,const char *valname,LPVOID pval,DWORD vsize)
 {
 	HKEY	hkey;
-	LONG 	cr,rc = -1;
+	LONG 	rc = -1;
 	DWORD	hsize,htype;
 
 	if (szregpath) {
-		if ((cr = RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
-			cr = RegQueryValueEx(hkey,valname,0,&htype,0,&hsize);
+		if ((RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
+			LONG cr = RegQueryValueEx(hkey,valname,0,&htype,0,&hsize);
 			if (cr == ERROR_SUCCESS) {
 				if (hsize <= vsize) {
-					cr = RegQueryValueEx(hkey,valname,0,&htype,(LPBYTE)pval,&hsize);
+					RegQueryValueEx(hkey,valname,0,&htype,(LPBYTE)pval,&hsize);
 					rc = 0;
 				}
 			}
@@ -259,8 +260,7 @@ static LONG getRegString (HKEY mainkey,const char *szregpath,const char *valname
 
 static LPKEYLIST findAllSubKeys (HKEY hkey,HKEY hksub,DWORD index,const char *keyname,LPKEYLIST kl)
 {
-	HKEY	hknew = 0;
-	char	*newkey;
+	HKEY	hknew = 0;	
 	LONG 	cr;
 
 	if (!hksub) {
@@ -271,7 +271,7 @@ static LPKEYLIST findAllSubKeys (HKEY hkey,HKEY hksub,DWORD index,const char *ke
 		
 	cr = RegEnumKey(hknew,index,(LPTSTR)subkeybuf,MAX_PATH_LEN);
 	if (cr == ERROR_SUCCESS) {
-		newkey = new char[strlen(subkeybuf)+1];
+		char* newkey = new char[strlen(subkeybuf)+1];
 		strcpy(newkey,subkeybuf);
 
 		kl = findAllSubKeys(hknew,0,0,newkey,kl);
@@ -296,14 +296,13 @@ static LPKEYLIST findAllSubKeys (HKEY hkey,HKEY hksub,DWORD index,const char *ke
 static LONG deleteRegPath (HKEY mainkey,const char *szregpath,const char *szdelpath)
 {
 	HKEY		hkey;
-	LONG 		cr,rc = -1;
-	KEYLIST		klist;
-	LPKEYLIST	pkl,k;
-	char		*keyname = 0;
+	LONG 		rc = -1;
+	KEYLIST		klist = { 0 };
+	LPKEYLIST	pkl;	
 	
-	if ((cr = RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
+	if ((RegOpenKey(mainkey,szregpath,&hkey)) == ERROR_SUCCESS) {
 
-		keyname = new char[strlen(szdelpath)+1];
+		char* keyname = new char[strlen(szdelpath)+1];
 		if (!keyname) {
 			RegCloseKey(hkey);
 			return rc;
@@ -315,10 +314,11 @@ static LONG deleteRegPath (HKEY mainkey,const char *szregpath,const char *szdelp
 	
 		if (klist.next) {
 			pkl = klist.next;
+			LPKEYLIST k;
 	
 			while (pkl) {
 				RegCloseKey(pkl->subKey);
-				cr = RegDeleteKey(pkl->mainKey,pkl->keyname);
+				RegDeleteKey(pkl->mainKey,pkl->keyname);
 				delete pkl->keyname;
 				k = pkl;
 				pkl = pkl->next;
